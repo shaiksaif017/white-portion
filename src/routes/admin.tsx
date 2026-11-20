@@ -43,7 +43,7 @@ import {
   type BookingSettings,
   defaultBookingSettings,
 } from "@/lib/booking-types";
-import { type NotificationLog } from "@/lib/notifications";
+import { type NotificationLog, customerWhatsAppConfirmationUrl } from "@/lib/notifications";
 import { brand } from "@/lib/brand";
 import { WHATSAPP_DISPLAY } from "@/lib/whatsapp";
 
@@ -151,7 +151,9 @@ function AdminPage() {
     try {
       const res = await adminUpdateStatus({ data: { id: recordId, status: newStatus } });
       if (!res.ok) return handleFailure(res.error);
-      if (selectedRecord && selectedRecord.id === recordId) setSelectedRecord(res.appointment);
+      if (newStatus === "Confirmed" || (selectedRecord && selectedRecord.id === recordId)) {
+        setSelectedRecord(res.appointment);
+      }
       await refreshData();
     } catch {
       setActionError("Could not reach the server.");
@@ -554,6 +556,19 @@ function AdminPage() {
                                   </button>
                                 )}
 
+                                {apt.booking_status === "Confirmed" &&
+                                  customerWhatsAppConfirmationUrl(apt, settings) && (
+                                    <a
+                                      href={customerWhatsAppConfirmationUrl(apt, settings) ?? undefined}
+                                      target="_blank"
+                                      rel="noopener noreferrer"
+                                      className="px-2 py-1 bg-[#25D366] text-white rounded text-[11px] font-semibold hover:opacity-90"
+                                      title="Send WhatsApp confirmation to the customer"
+                                    >
+                                      WhatsApp
+                                    </a>
+                                  )}
+
                                 {apt.booking_status === "Confirmed" && (
                                   <button
                                     type="button"
@@ -931,6 +946,33 @@ function AdminPage() {
                 </p>
               )}
             </div>
+
+            {selectedRecord.booking_status === "Confirmed" && (
+              <div className="p-4 rounded border border-[#25D366]/40 bg-[#25D366]/10 space-y-3 text-xs">
+                <p className="font-semibold text-charcoal">
+                  ✅ Confirmed. A confirmation email is sent to {selectedRecord.email} automatically.
+                </p>
+                {customerWhatsAppConfirmationUrl(selectedRecord, settings) ? (
+                  <>
+                    <p className="text-muted-foreground">
+                      Also let the client know on WhatsApp: the message is pre-written, just tap Send.
+                    </p>
+                    <a
+                      href={customerWhatsAppConfirmationUrl(selectedRecord, settings) ?? undefined}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                      className="inline-flex items-center gap-2 px-4 py-2 rounded bg-[#25D366] text-white font-semibold hover:opacity-90"
+                    >
+                      Send WhatsApp confirmation to {selectedRecord.full_name.split(" ")[0]}
+                    </a>
+                  </>
+                ) : (
+                  <p className="text-muted-foreground">
+                    The client's phone number doesn't look like a valid WhatsApp number, so please contact them directly.
+                  </p>
+                )}
+              </div>
+            )}
 
             <div className="flex items-center justify-between pt-4 border-t border-border">
               <div className="flex gap-2">

@@ -38,6 +38,7 @@ export async function sendEmail(message: EmailMessage, replyTo?: string): Promis
         to: message.to,
         subject: message.subject,
         text: message.text,
+        ...(message.html ? { html: message.html } : {}),
         ...(replyTo ? { replyTo } : {}),
       });
       status = "SENT";
