@@ -2,6 +2,7 @@
 // (src/server/mailer.ts), never in the browser.
 import { type AppointmentRecord, type BookingSettings } from "./booking-types";
 import { brand } from "./brand";
+import { whatsappUrl, WHATSAPP_DISPLAY } from "./whatsapp";
 
 export type NotificationType =
   "CUSTOMER_ACKNOWLEDGEMENT" | "ADMIN_ALERT" | "APPOINTMENT_CONFIRMED" | "APPOINTMENT_CANCELLED";
@@ -26,13 +27,10 @@ export interface EmailMessage {
   text: string;
 }
 
-type Settings = Pick<
-  BookingSettings,
-  "businessLocation" | "businessWhatsapp" | "adminNotificationEmail"
->;
+type Settings = Pick<BookingSettings, "businessLocation" | "adminNotificationEmail">;
 
-function whatsappLink(settings: Pick<BookingSettings, "businessWhatsapp">): string {
-  return `https://wa.me/${settings.businessWhatsapp.replace(/[^0-9]/g, "")}`;
+function whatsappLink(_settings?: unknown): string {
+  return `${WHATSAPP_DISPLAY} (${whatsappUrl()})`;
 }
 
 export function buildCustomerAcknowledgement(
@@ -153,11 +151,7 @@ ${brand.name} Coaching Team
   };
 }
 
-export function generateWhatsAppUrl(
-  appointment: AppointmentRecord,
-  settings: Pick<BookingSettings, "businessWhatsapp">,
-): string {
-  const cleanPhone = settings.businessWhatsapp.replace(/[^0-9]/g, "");
+export function generateWhatsAppUrl(appointment: AppointmentRecord): string {
   const message = [
     `Hello ${brand.name},`,
     `I have submitted an appointment request. Here are my details:`,
@@ -171,5 +165,5 @@ export function generateWhatsAppUrl(
     `Looking forward to confirming my consultation. Thank you!`,
   ].join("\n");
 
-  return `https://wa.me/${cleanPhone}?text=${encodeURIComponent(message)}`;
+  return whatsappUrl(message);
 }

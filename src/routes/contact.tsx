@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import { brand } from "@/lib/brand";
+import { whatsappUrl } from "@/lib/whatsapp";
 
 export const Route = createFileRoute("/contact")({
   head: () => ({
@@ -38,7 +39,7 @@ function ContactPage() {
     ].join("\n");
 
     setSubmitted(true);
-    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
+    window.open(whatsappUrl(message), "_blank", "noopener,noreferrer");
   }
 
   return (

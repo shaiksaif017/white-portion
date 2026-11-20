@@ -29,6 +29,7 @@ import {
 } from "@/lib/booking-types";
 import { getPublicBookingSettings, submitBooking } from "@/lib/booking-api";
 import { generateWhatsAppUrl } from "@/lib/notifications";
+import { whatsappUrl } from "@/lib/whatsapp";
 import { brand } from "@/lib/brand";
 import nutritionImage from "@/assets/white-portion-nutrition.jpg";
 import athleteImage from "@/assets/white-portion-editorial.jpg";
@@ -324,7 +325,7 @@ function BookAppointmentPage() {
             <div className="flex flex-col sm:flex-row items-center justify-center gap-4">
               <Button asChild variant="hero" className="w-full sm:w-auto">
                 <a
-                  href={generateWhatsAppUrl(confirmedBooking, settings)}
+                  href={generateWhatsAppUrl(confirmedBooking)}
                   target="_blank"
                   rel="noopener noreferrer"
                   className="flex items-center justify-center gap-2"
@@ -348,7 +349,7 @@ function BookAppointmentPage() {
                 Online booking is temporarily unavailable. Please{" "}
                 <a
                   className="underline font-semibold"
-                  href={`https://wa.me/${settings.businessWhatsapp.replace(/[^0-9]/g, "")}`}
+                  href={whatsappUrl("Hello White Portion Wellness! I'd like to book a consultation.")}
                   target="_blank"
                   rel="noopener noreferrer"
                 >

@@ -7,6 +7,7 @@ import { SiteFooter } from "@/components/site-footer";
 import athleteImage from "@/assets/white-portion-editorial.jpg";
 import nutritionImage from "@/assets/white-portion-nutrition.jpg";
 import { brand, organizationJsonLd } from "@/lib/brand";
+import { whatsappUrl } from "@/lib/whatsapp";
 
 const services = [
   ["01", "Personalised diet planning", "Nutrition strategies shaped around your individual goals, training, and everyday life."],
@@ -77,7 +78,7 @@ function HomePage() {
       `A little about my goals: ${formData.get("goals")}`,
     ].join("\n");
     setSubmitted(true);
-    window.open(`https://wa.me/?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
+    window.open(whatsappUrl(message), "_blank", "noopener,noreferrer");
   }
 
   return (
@@ -204,7 +205,7 @@ function HomePage() {
               <label htmlFor="goals">What are you working toward?</label>
               <textarea id="goals" name="goals" rows={3} placeholder="Share a little about your goals" required />
               <Button type="submit" variant="hero" className="submit-button">Continue with WhatsApp <ArrowUpRight aria-hidden="true" /></Button>
-              {submitted && <p className="form-note" role="status">Your message is ready in WhatsApp. Choose a contact to send your enquiry.</p>}
+              {submitted && <p className="form-note" role="status">Your message is ready in WhatsApp. Tap send to reach our team.</p>}
               <p className="form-footnote">Your details will be added to a message for you to review before sending.</p>
             </form>
           </div>

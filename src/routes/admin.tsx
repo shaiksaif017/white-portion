@@ -45,6 +45,7 @@ import {
 } from "@/lib/booking-types";
 import { type NotificationLog } from "@/lib/notifications";
 import { brand } from "@/lib/brand";
+import { WHATSAPP_DISPLAY } from "@/lib/whatsapp";
 
 export const Route = createFileRoute("/admin")({
   head: () => ({
@@ -677,14 +678,9 @@ function AdminPage() {
                   <label className="block text-xs font-bold text-charcoal mb-1">
                     Concierge WhatsApp Phone:
                   </label>
-                  <input
-                    type="text"
-                    value={settings.businessWhatsapp}
-                    onChange={(e) =>
-                      setSettings({ ...settings, businessWhatsapp: e.target.value })
-                    }
-                    className="w-full p-2.5 rounded border border-border bg-background text-xs"
-                  />
+                  <p className="w-full p-2.5 rounded border border-border bg-secondary/40 text-xs text-muted-foreground">
+                    {WHATSAPP_DISPLAY} (set in the website code: src/lib/whatsapp.ts)
+                  </p>
                 </div>
 
                 <div>

@@ -85,7 +85,6 @@ export interface BookingSettings {
   bufferTimeMinutes: number; // 15
   businessTimezone: string; // display label, e.g. "Asia/Kolkata (IST)"
   businessLocation: string;
-  businessWhatsapp: string;
   adminNotificationEmail: string;
   blockedDates: string[]; // ["2026-12-25"]
   blockedSlots: { date: string; time: string }[];
@@ -103,7 +102,6 @@ export const BookingSettingsSchema = z
     bufferTimeMinutes: z.number().int().min(0).max(120),
     businessTimezone: safeText(60),
     businessLocation: safeText(300),
-    businessWhatsapp: safeText(30),
     adminNotificationEmail: safeText(254).pipe(z.string().email("Enter a valid admin email")),
     blockedDates: z.array(ymd).max(500),
     blockedSlots: z.array(z.object({ date: ymd, time: hhmm })).max(2000),
@@ -129,7 +127,6 @@ export const defaultBookingSettings: BookingSettings = {
   bufferTimeMinutes: 15,
   businessTimezone: "Asia/Kolkata (IST)",
   businessLocation: "White Portion Wellness Private Coaching Studio, Indiranagar, Bangalore",
-  businessWhatsapp: "+919876543210",
   adminNotificationEmail: "concierge@whiteportionwellness.com",
   blockedDates: [],
   blockedSlots: [],

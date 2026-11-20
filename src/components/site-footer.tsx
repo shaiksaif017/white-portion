@@ -2,6 +2,7 @@ import { Link } from "@tanstack/react-router";
 import { ArrowRight, ArrowUpRight } from "lucide-react";
 import { Wordmark } from "@/components/wordmark";
 import { brand } from "@/lib/brand";
+import { whatsappUrl, WHATSAPP_DEFAULT_MESSAGE, WHATSAPP_DISPLAY } from "@/lib/whatsapp";
 
 export function SiteFooter() {
   function scrollToTop(e: React.MouseEvent) {
@@ -51,8 +52,8 @@ export function SiteFooter() {
           <ul className="footer-links">
             <li><Link to="/book-appointment">Book an Appointment</Link></li>
             <li><Link to="/admin">Admin Portal</Link></li>
-            <li><a href="https://wa.me/" target="_blank" rel="noopener noreferrer">Direct WhatsApp Line</a></li>
-            <li><a href="mailto:contact@whiteportionwellness.com">Private Inquiries</a></li>
+            <li><a href={whatsappUrl(WHATSAPP_DEFAULT_MESSAGE)} target="_blank" rel="noopener noreferrer">WhatsApp {WHATSAPP_DISPLAY}</a></li>
+            <li><a href="mailto:care@officialwhiteportion.com">care@officialwhiteportion.com</a></li>
           </ul>
         </div>
       </div>
