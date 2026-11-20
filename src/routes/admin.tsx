@@ -29,6 +29,7 @@ import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import {
   adminExportCsv,
+  adminSendTestEmail,
   adminLogin,
   adminLogout,
   adminSaveSettings,
@@ -157,6 +158,29 @@ function AdminPage() {
       await refreshData();
     } catch {
       setActionError("Could not reach the server.");
+    }
+  }
+
+  const [testEmailRunning, setTestEmailRunning] = useState(false);
+  const [testEmailResult, setTestEmailResult] = useState<string | null>(null);
+
+  async function handleTestEmail() {
+    setTestEmailRunning(true);
+    setTestEmailResult(null);
+    try {
+      const res = await adminSendTestEmail();
+      if (!res.ok) return handleFailure(res.error);
+      const smtp = res.smtp
+        ? `Mail server: ${res.smtp.host}:${res.smtp.port}\nLogin: ${res.smtp.user}\nFrom: ${res.smtp.from}`
+        : "Mail server: NOT CONFIGURED (SMTP_HOST / SMTP_USER / SMTP_PASS missing)";
+      setTestEmailResult(
+        `Result: ${res.result}\nSent to: ${res.to}\n${smtp}${res.error ? `\nReason: ${res.error}` : ""}`,
+      );
+      await refreshData();
+    } catch {
+      setTestEmailResult("Could not reach the server.");
+    } finally {
+      setTestEmailRunning(false);
     }
   }
 
@@ -802,6 +826,25 @@ function AdminPage() {
               <p className="text-xs text-muted-foreground">
                 All client acknowledgement and administrator intake notification events are logged here.
               </p>
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <Button
+                  type="button"
+                  variant="outline"
+                  className="text-xs"
+                  disabled={testEmailRunning}
+                  onClick={handleTestEmail}
+                >
+                  {testEmailRunning ? "Sending test email…" : "Send test email"}
+                </Button>
+                <span className="text-[11px] text-muted-foreground">
+                  Sends a test to the Administrator Notification Email and shows the result.
+                </span>
+              </div>
+              {testEmailResult && (
+                <pre className="mt-3 p-3 rounded border border-border bg-background text-[11px] whitespace-pre-wrap break-words">
+                  {testEmailResult}
+                </pre>
+              )}
             </div>
 
             <div className="space-y-3 mt-6">
@@ -841,6 +884,11 @@ function AdminPage() {
                     <div>
                       <span className="font-semibold text-charcoal">Subject:</span> {n.subject}
                     </div>
+                    {n.error && (
+                      <div className="p-2 rounded bg-red-50 border border-red-200 text-red-800 break-words">
+                        <span className="font-semibold">Reason:</span> {n.error}
+                      </div>
+                    )}
                     <pre className="p-3 rounded bg-background border border-border text-[11px] font-mono text-muted-foreground whitespace-pre-wrap max-h-40 overflow-y-auto">
                       {n.content}
                     </pre>

@@ -33,7 +33,7 @@ import {
 import * as bookings from "@/server/bookings";
 import { isDbConfigured } from "@/server/db";
 import { authConfig, isProduction } from "@/server/env";
-import { sendEmails } from "@/server/mailer";
+import { sendEmail, sendEmails, smtpSummary } from "@/server/mailer";
 
 const UNAVAILABLE = "Online booking is temporarily unavailable. Please contact us on WhatsApp.";
 
@@ -252,6 +252,35 @@ export const adminSetSlotBlocked = createServerFn({ method: "POST" })
       return { ok: false, error: "Could not update blocked slots." };
     }
   });
+
+export const adminSendTestEmail = createServerFn({ method: "POST" }).handler(
+  async (): Promise<
+    | {
+        ok: true;
+        result: "SENT" | "FAILED" | "SKIPPED";
+        error?: string | undefined;
+        to: string;
+        smtp: { host: string; port: number; user: string; from: string } | null;
+      }
+    | Fail
+  > => {
+    if (!isAdmin()) return unauthorized;
+    try {
+      const settings = await bookings.getSettings();
+      const to = settings.adminNotificationEmail;
+      const res = await sendEmail({
+        type: "TEST_EMAIL",
+        to,
+        subject: "Test email from your White Portion Wellness website",
+        text: "This is a test email from your website's admin portal.\n\nIf you can read this, booking emails are working.",
+      });
+      return { ok: true, result: res.status, error: res.error, to, smtp: smtpSummary() };
+    } catch (error) {
+      console.error("[admin] test email failed", error);
+      return { ok: false, error: "Could not run the email test." };
+    }
+  },
+);
 
 export const adminExportCsv = createServerFn({ method: "GET" }).handler(
   async (): Promise<{ ok: true; csv: string } | Fail> => {

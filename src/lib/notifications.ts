@@ -5,7 +5,11 @@ import { brand } from "./brand";
 import { whatsappUrl, WHATSAPP_DISPLAY } from "./whatsapp";
 
 export type NotificationType =
-  "CUSTOMER_ACKNOWLEDGEMENT" | "ADMIN_ALERT" | "APPOINTMENT_CONFIRMED" | "APPOINTMENT_CANCELLED";
+  | "CUSTOMER_ACKNOWLEDGEMENT"
+  | "ADMIN_ALERT"
+  | "APPOINTMENT_CONFIRMED"
+  | "APPOINTMENT_CANCELLED"
+  | "TEST_EMAIL";
 
 export interface NotificationLog {
   id: string;

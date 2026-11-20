@@ -26,7 +26,21 @@ function getTransporter(): { transporter: Transporter; from: string } | null {
   return { transporter, from: `"${brand.name}" <${config.from}>` };
 }
 
-export async function sendEmail(message: EmailMessage, replyTo?: string): Promise<void> {
+export interface SendResult {
+  status: "SENT" | "FAILED" | "SKIPPED";
+  error?: string | undefined;
+}
+
+// Turns a mail error into a short, human-readable reason (never includes the password).
+function describeError(e: unknown): string {
+  const err = e as { message?: string; code?: string; responseCode?: number; command?: string };
+  const parts = [err.message ?? String(e)];
+  if (err.code) parts.push(`code ${err.code}`);
+  if (err.responseCode) parts.push(`server reply ${err.responseCode}`);
+  return parts.join(" | ");
+}
+
+export async function sendEmail(message: EmailMessage, replyTo?: string): Promise<SendResult> {
   let status: "SENT" | "FAILED" | "SKIPPED" = "SKIPPED";
   let error: string | undefined;
 
@@ -44,7 +58,7 @@ export async function sendEmail(message: EmailMessage, replyTo?: string): Promis
       status = "SENT";
     } catch (e) {
       status = "FAILED";
-      error = e instanceof Error ? e.message : String(e);
+      error = describeError(e);
       console.error("[mailer] send failed", message.type, error);
     }
   } else if (!mail) {
@@ -63,6 +77,14 @@ export async function sendEmail(message: EmailMessage, replyTo?: string): Promis
   } catch (e) {
     console.error("[mailer] could not write notification log", e);
   }
+  return { status, error };
+}
+
+// Safe summary of the mail settings the server actually loaded (no password).
+export function smtpSummary() {
+  const config = smtpConfig();
+  if (!config) return null;
+  return { host: config.host, port: config.port, user: config.user, from: config.from };
 }
 
 export async function sendEmails(messages: { message: EmailMessage; replyTo?: string }[]) {
