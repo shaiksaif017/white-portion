@@ -84,7 +84,27 @@ export async function sendEmail(message: EmailMessage, replyTo?: string): Promis
 export function smtpSummary() {
   const config = smtpConfig();
   if (!config) return null;
-  return { host: config.host, port: config.port, user: config.user, from: config.from };
+  return {
+    host: config.host,
+    port: config.port,
+    user: config.user,
+    from: config.from,
+    // Diagnostics only: describes the stored password without revealing it.
+    passwordLength: config.pass.length,
+    passwordWarnings: passwordWarnings(config.pass),
+    serverStartedAt: new Date(Date.now() - process.uptime() * 1000).toISOString(),
+  };
+}
+
+function passwordWarnings(pass: string): string[] {
+  const warnings: string[] = [];
+  if (/^["'`]|["'`]$/.test(pass))
+    warnings.push("starts or ends with a quote mark (remove the quotes)");
+  if (/\s/.test(pass)) warnings.push("contains a space or line break");
+  if (/&(amp|lt|gt|quot|#\d+);/.test(pass)) warnings.push("contains an HTML code like &amp;");
+  if (/[^\x20-\x7e]/.test(pass)) warnings.push("contains a non-standard or invisible character");
+  if (/^<.*>$/.test(pass)) warnings.push("is wrapped in < > brackets (remove them)");
+  return warnings;
 }
 
 export async function sendEmails(messages: { message: EmailMessage; replyTo?: string }[]) {

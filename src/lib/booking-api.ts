@@ -260,7 +260,7 @@ export const adminSendTestEmail = createServerFn({ method: "POST" }).handler(
         result: "SENT" | "FAILED" | "SKIPPED";
         error?: string | undefined;
         to: string;
-        smtp: { host: string; port: number; user: string; from: string } | null;
+        smtp: ReturnType<typeof smtpSummary>;
       }
     | Fail
   > => {

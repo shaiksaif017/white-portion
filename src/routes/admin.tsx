@@ -171,7 +171,17 @@ function AdminPage() {
       const res = await adminSendTestEmail();
       if (!res.ok) return handleFailure(res.error);
       const smtp = res.smtp
-        ? `Mail server: ${res.smtp.host}:${res.smtp.port}\nLogin: ${res.smtp.user}\nFrom: ${res.smtp.from}`
+        ? [
+            `Mail server: ${res.smtp.host}:${res.smtp.port}`,
+            `Login: ${res.smtp.user}`,
+            `From: ${res.smtp.from}`,
+            `Password loaded: ${res.smtp.passwordLength} characters${
+              res.smtp.passwordWarnings.length
+                ? ` - WARNING: ${res.smtp.passwordWarnings.join("; ")}`
+                : " (no quotes, spaces or hidden characters)"
+            }`,
+            `Server last restarted: ${new Date(res.smtp.serverStartedAt).toLocaleString()}`,
+          ].join("\n")
         : "Mail server: NOT CONFIGURED (SMTP_HOST / SMTP_USER / SMTP_PASS missing)";
       setTestEmailResult(
         `Result: ${res.result}\nSent to: ${res.to}\n${smtp}${res.error ? `\nReason: ${res.error}` : ""}`,
