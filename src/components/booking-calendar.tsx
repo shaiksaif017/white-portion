@@ -1,10 +1,13 @@
-import { useState, useMemo } from "react";
-import { ChevronLeft, ChevronRight, Clock, Calendar as CalendarIcon, Check, AlertCircle } from "lucide-react";
-import { getAvailableSlots, type SlotAvailability } from "@/lib/booking-store";
-import { type BookingSettings } from "@/lib/booking-types";
+import { useState, useMemo, useEffect } from "react";
+import { ChevronLeft, ChevronRight, Clock, Calendar as CalendarIcon, Check, AlertCircle, Loader2 } from "lucide-react";
+import { getSlotsForDate } from "@/lib/booking-api";
+import { isBookableDate, nowInBusinessTz, type SlotAvailability } from "@/lib/booking-logic";
+import { type PublicBookingSettings } from "@/lib/booking-types";
 
 interface BookingCalendarProps {
-  settings: BookingSettings;
+  settings: PublicBookingSettings;
+  // Bump to re-fetch slots (e.g. after a booking attempt failed because a slot was taken).
+  refreshKey?: number;
   selectedDate: string; // YYYY-MM-DD
   selectedTime: string; // HH:MM
   onSelectDate: (date: string) => void;
@@ -13,17 +16,20 @@ interface BookingCalendarProps {
 
 export function BookingCalendar({
   settings,
+  refreshKey = 0,
   selectedDate,
   selectedTime,
   onSelectDate,
   onSelectTime,
 }: BookingCalendarProps) {
   const today = useMemo(() => new Date(), []);
-  const todayStr = useMemo(() => today.toISOString().split("T")[0], [today]);
+  // "Today" in the studio's time zone, not the visitor's.
+  const zonedNow = useMemo(() => nowInBusinessTz(today), [today]);
+  const todayStr = zonedNow.date;
 
   const [currentMonth, setCurrentMonth] = useState(() => {
     if (selectedDate) {
-      const [y, m] = selectedDate.split("-").map(Number);
+      const [y = 0, m = 1] = selectedDate.split("-").map(Number);
       return new Date(y, m - 1, 1);
     }
     return new Date(today.getFullYear(), today.getMonth(), 1);
@@ -66,13 +72,7 @@ export function BookingCalendar({
       const mm = String(month + 1).padStart(2, "0");
       const dd = String(day).padStart(2, "0");
       const dateStr = `${year}-${mm}-${dd}`;
-      const dayOfWeek = new Date(year, month, day).getDay();
-
-      const isPast = dateStr < todayStr;
-      const isNotWorkingDay = !settings.workingDays.includes(dayOfWeek);
-      const isBlocked = settings.blockedDates.includes(dateStr);
-
-      const isDisabled = isPast || isNotWorkingDay || isBlocked;
+      const isDisabled = !isBookableDate(dateStr, settings, zonedNow);
 
       days.push({
         dateStr,
@@ -83,16 +83,47 @@ export function BookingCalendar({
     }
 
     return days;
-  }, [year, month, todayStr, settings]);
+  }, [year, month, zonedNow, settings]);
 
-  // Slots for currently selected date
-  const slots: SlotAvailability[] = useMemo(() => {
-    if (!selectedDate) return [];
-    return getAvailableSlots(selectedDate);
-  }, [selectedDate]);
+  // Slots for the selected date come from the server, which knows existing bookings.
+  const [slots, setSlots] = useState<SlotAvailability[]>([]);
+  const [slotsLoading, setSlotsLoading] = useState(false);
+  const [slotsError, setSlotsError] = useState<string | null>(null);
+
+  useEffect(() => {
+    if (!selectedDate) {
+      setSlots([]);
+      return;
+    }
+    let cancelled = false;
+    setSlotsLoading(true);
+    setSlotsError(null);
+    getSlotsForDate({ data: { date: selectedDate } })
+      .then((res) => {
+        if (cancelled) return;
+        if (res.ok) {
+          setSlots(res.slots);
+        } else {
+          setSlots([]);
+          setSlotsError(res.error);
+        }
+      })
+      .catch(() => {
+        if (!cancelled) {
+          setSlots([]);
+          setSlotsError("Could not load time slots. Please check your connection and try again.");
+        }
+      })
+      .finally(() => {
+        if (!cancelled) setSlotsLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [selectedDate, refreshKey]);
 
   function formatTimeDisplay(hhmm: string): string {
-    const [h, m] = hhmm.split(":").map(Number);
+    const [h = 0, m = 0] = hhmm.split(":").map(Number);
     const ampm = h >= 12 ? "PM" : "AM";
     const hour12 = h % 12 || 12;
     return `${hour12}:${String(m).padStart(2, "0")} ${ampm}`;
@@ -216,6 +247,16 @@ export function BookingCalendar({
           <div className="py-12 text-center text-muted-foreground space-y-2">
             <CalendarIcon className="w-8 h-8 text-muted-foreground/40 mx-auto" />
             <p className="text-xs">Please select an available date on the calendar to view consultation time slots.</p>
+          </div>
+        ) : slotsLoading ? (
+          <div className="py-12 text-center text-muted-foreground space-y-2">
+            <Loader2 className="w-8 h-8 text-muted-foreground/40 mx-auto animate-spin" />
+            <p className="text-xs">Checking availability…</p>
+          </div>
+        ) : slotsError ? (
+          <div className="py-12 text-center text-muted-foreground space-y-2">
+            <AlertCircle className="w-8 h-8 text-destructive/60 mx-auto" />
+            <p className="text-xs font-medium text-charcoal">{slotsError}</p>
           </div>
         ) : slots.length === 0 ? (
           <div className="py-12 text-center text-muted-foreground space-y-2">

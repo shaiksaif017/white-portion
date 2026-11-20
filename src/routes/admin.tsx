@@ -28,24 +28,22 @@ import { Button } from "@/components/ui/button";
 import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import {
-  loadAppointments,
-  loadSettings,
-  saveSettings,
-  updateAppointmentStatus,
-  blockSlot,
-  unblockSlot,
-  exportAppointmentsCSV,
-} from "@/lib/booking-store";
+  adminExportCsv,
+  adminLogin,
+  adminLogout,
+  adminSaveSettings,
+  adminSetSlotBlocked,
+  adminUpdateStatus,
+  getAdminDashboard,
+  getAdminSession,
+} from "@/lib/booking-api";
 import {
   type AppointmentRecord,
   type BookingStatus,
   type BookingSettings,
+  defaultBookingSettings,
 } from "@/lib/booking-types";
-import {
-  getNotificationLogs,
-  sendBookingConfirmation,
-  type NotificationLog,
-} from "@/lib/notifications";
+import { type NotificationLog } from "@/lib/notifications";
 import { brand } from "@/lib/brand";
 
 export const Route = createFileRoute("/admin")({
@@ -58,16 +56,17 @@ export const Route = createFileRoute("/admin")({
   component: AdminPage,
 });
 
-const ADMIN_PASSCODE = "wpw-admin-2026";
-const AUTH_KEY = "wpw_admin_auth_v1";
-
 function AdminPage() {
   const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
+  const [sessionChecked, setSessionChecked] = useState(false);
+  const [serverConfigured, setServerConfigured] = useState(true);
   const [passcode, setPasscode] = useState("");
   const [authError, setAuthError] = useState("");
+  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const [appointments, setAppointments] = useState<AppointmentRecord[]>([]);
-  const [settings, setSettings] = useState<BookingSettings>(loadSettings());
+  const [settings, setSettings] = useState<BookingSettings>(defaultBookingSettings);
   const [notifications, setNotifications] = useState<NotificationLog[]>([]);
 
   const [activeTab, setActiveTab] = useState<"bookings" | "settings" | "notifications">("bookings");
@@ -80,82 +79,134 @@ function AdminPage() {
   const [blockTimeInput, setBlockTimeInput] = useState("10:00");
 
   useEffect(() => {
-    if (typeof window !== "undefined") {
-      const stored = sessionStorage.getItem(AUTH_KEY);
-      if (stored === "true") {
-        setIsAuthenticated(true);
-        refreshData();
-      }
-    }
+    getAdminSession()
+      .then((s) => {
+        setServerConfigured(s.configured);
+        if (s.authenticated) {
+          setIsAuthenticated(true);
+          void refreshData();
+        }
+      })
+      .catch(() => setAuthError("Could not reach the server."))
+      .finally(() => setSessionChecked(true));
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- check the session once on page load
   }, []);
 
-  function refreshData() {
-    setAppointments(loadAppointments());
-    setSettings(loadSettings());
-    setNotifications(getNotificationLogs());
-  }
-
-  function handleLogin(e: React.FormEvent) {
-    e.preventDefault();
-    if (passcode.trim() === ADMIN_PASSCODE) {
-      setIsAuthenticated(true);
-      setAuthError("");
-      sessionStorage.setItem(AUTH_KEY, "true");
-      refreshData();
+  // Any "session expired" answer from the server drops back to the login screen.
+  function handleFailure(error: string) {
+    if (/session has expired/i.test(error)) {
+      setIsAuthenticated(false);
+      setAuthError(error);
     } else {
-      setAuthError("Invalid administrative passcode. Please verify your credentials.");
+      setActionError(error);
     }
   }
 
-  function handleLogout() {
-    setIsAuthenticated(false);
-    sessionStorage.removeItem(AUTH_KEY);
-  }
-
-  function handleStatusChange(recordId: string, newStatus: BookingStatus) {
-    const success = updateAppointmentStatus(recordId, newStatus);
-    if (success) {
-      const target = appointments.find((a) => a.id === recordId);
-      if (target && newStatus === "Confirmed") {
-        sendBookingConfirmation(target, settings);
-      }
-      refreshData();
-      if (selectedRecord && selectedRecord.id === recordId) {
-        setSelectedRecord((prev) => (prev ? { ...prev, booking_status: newStatus } : null));
-      }
+  async function refreshData() {
+    try {
+      const res = await getAdminDashboard();
+      if (!res.ok) return handleFailure(res.error);
+      setActionError(null);
+      setAppointments(res.appointments);
+      setSettings(res.settings);
+      setNotifications(res.notifications);
+    } catch {
+      setActionError("Could not reach the server.");
     }
   }
 
-  function handleDownloadCSV() {
-    const csvContent = exportAppointmentsCSV();
-    const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement("a");
-    link.href = url;
-    link.setAttribute("download", `wpw-appointments-${new Date().toISOString().split("T")[0]}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
+  async function handleLogin(e: React.FormEvent) {
+    e.preventDefault();
+    setIsLoggingIn(true);
+    try {
+      const res = await adminLogin({ data: { password: passcode } });
+      if (res.ok) {
+        setIsAuthenticated(true);
+        setAuthError("");
+        setPasscode("");
+        await refreshData();
+      } else {
+        setAuthError(res.error);
+      }
+    } catch {
+      setAuthError("Could not reach the server.");
+    } finally {
+      setIsLoggingIn(false);
+    }
   }
 
-  function handleBlockSlot(e: React.FormEvent) {
+  async function handleLogout() {
+    try {
+      await adminLogout();
+    } finally {
+      setIsAuthenticated(false);
+      setAppointments([]);
+      setNotifications([]);
+      setSelectedRecord(null);
+    }
+  }
+
+  async function handleStatusChange(recordId: string, newStatus: BookingStatus) {
+    try {
+      const res = await adminUpdateStatus({ data: { id: recordId, status: newStatus } });
+      if (!res.ok) return handleFailure(res.error);
+      if (selectedRecord && selectedRecord.id === recordId) setSelectedRecord(res.appointment);
+      await refreshData();
+    } catch {
+      setActionError("Could not reach the server.");
+    }
+  }
+
+  async function handleDownloadCSV() {
+    try {
+      const res = await adminExportCsv();
+      if (!res.ok) return handleFailure(res.error);
+      const blob = new Blob(["﻿" + res.csv], { type: "text/csv;charset=utf-8;" });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.setAttribute("download", `wpw-appointments-${new Date().toISOString().split("T")[0]}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+    } catch {
+      setActionError("Could not reach the server.");
+    }
+  }
+
+  async function setSlotBlocked(date: string, time: string, blocked: boolean) {
+    try {
+      const res = await adminSetSlotBlocked({ data: { date, time, blocked } });
+      if (!res.ok) return handleFailure(res.error);
+      setSettings(res.settings);
+    } catch {
+      setActionError("Could not reach the server.");
+    }
+  }
+
+  async function handleBlockSlot(e: React.FormEvent) {
     e.preventDefault();
     if (!blockDateInput || !blockTimeInput) return;
-    blockSlot(blockDateInput, blockTimeInput);
-    refreshData();
+    await setSlotBlocked(blockDateInput, blockTimeInput, true);
     setBlockDateInput("");
   }
 
   function handleUnblockSlot(date: string, time: string) {
-    unblockSlot(date, time);
-    refreshData();
+    void setSlotBlocked(date, time, false);
   }
 
-  function handleSaveSettings(e: React.FormEvent) {
+  async function handleSaveSettings(e: React.FormEvent) {
     e.preventDefault();
-    saveSettings(settings);
-    refreshData();
-    alert("Booking settings saved successfully.");
+    try {
+      const res = await adminSaveSettings({ data: settings });
+      if (!res.ok) return handleFailure(res.error);
+      setSettings(res.settings);
+      setActionError(null);
+      alert("Booking settings saved successfully.");
+    } catch {
+      setActionError("Could not reach the server.");
+    }
   }
 
   // Filtered and searched records
@@ -227,13 +278,15 @@ function AdminPage() {
                 </div>
               )}
 
-              <Button type="submit" variant="hero" className="w-full !mt-6">
-                AUTHENTICATE ACCESS
+              <Button type="submit" variant="hero" className="w-full !mt-6" disabled={isLoggingIn}>
+                {isLoggingIn ? "CHECKING…" : "AUTHENTICATE ACCESS"}
               </Button>
 
-              <p className="text-[11px] text-paper-faint text-center pt-2">
-                Default authorization passkey: <code className="text-gold-accent">wpw-admin-2026</code>
-              </p>
+              {sessionChecked && !serverConfigured && (
+                <p className="text-[11px] text-paper-faint text-center pt-2">
+                  Admin login is not configured on the server yet.
+                </p>
+              )}
             </form>
           </div>
         </div>
@@ -362,6 +415,12 @@ function AdminPage() {
 
       {/* Main Content Sections */}
       <div className="max-w-7xl mx-auto px-6 md:px-12 py-8">
+        {actionError && (
+          <div className="mb-6 p-3 rounded border border-destructive/40 bg-destructive/10 text-xs text-charcoal">
+            {actionError}
+          </div>
+        )}
+
         {activeTab === "bookings" && (
           <div className="space-y-6">
             {/* Filters & Search Row */}
@@ -737,7 +796,7 @@ function AdminPage() {
             <div className="space-y-3 mt-6">
               {notifications.length === 0 ? (
                 <p className="text-xs text-muted-foreground py-8 text-center">
-                  No notification logs recorded yet. Submit a booking test to view events.
+                  No emails recorded yet. Each booking will appear here.
                 </p>
               ) : (
                 notifications.map((n) => (
@@ -746,7 +805,21 @@ function AdminPage() {
                     className="p-4 rounded border border-border bg-secondary/30 space-y-2 text-xs"
                   >
                     <div className="flex flex-wrap items-center justify-between gap-2 border-b border-border pb-2">
-                      <span className="font-bold text-primary tracking-wider">{n.type}</span>
+                      <span className="font-bold text-primary tracking-wider">
+                        {n.type}{" "}
+                        <span
+                          className={`ml-2 px-1.5 py-0.5 rounded text-[10px] ${
+                            n.status === "SENT"
+                              ? "bg-emerald-100 text-emerald-800"
+                              : n.status === "FAILED"
+                                ? "bg-red-100 text-red-800"
+                                : "bg-amber-100 text-amber-800"
+                          }`}
+                          title={n.error ?? ""}
+                        >
+                          {n.status === "SKIPPED" ? "NOT SENT (email not configured)" : n.status}
+                        </span>
+                      </span>
                       <span className="text-[11px] text-muted-foreground">
                         {new Date(n.sentAt).toLocaleString()}
                       </span>

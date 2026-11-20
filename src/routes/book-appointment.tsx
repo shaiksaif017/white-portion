@@ -27,19 +27,14 @@ import {
   type BookingInput,
   type AppointmentRecord,
 } from "@/lib/booking-types";
-import {
-  loadSettings,
-  createAppointment,
-} from "@/lib/booking-store";
-import {
-  sendBookingAcknowledgement,
-  generateWhatsAppUrl,
-} from "@/lib/notifications";
+import { getPublicBookingSettings, submitBooking } from "@/lib/booking-api";
+import { generateWhatsAppUrl } from "@/lib/notifications";
 import { brand } from "@/lib/brand";
 import nutritionImage from "@/assets/white-portion-nutrition.jpg";
 import athleteImage from "@/assets/white-portion-editorial.jpg";
 
 export const Route = createFileRoute("/book-appointment")({
+  loader: () => getPublicBookingSettings(),
   head: () => ({
     meta: [
       { title: `Book a Nutrition & Fitness Consultation | ${brand.name}` },
@@ -60,7 +55,8 @@ export const Route = createFileRoute("/book-appointment")({
 });
 
 function BookAppointmentPage() {
-  const settings = loadSettings();
+  const { bookingEnabled, settings } = Route.useLoaderData();
+  const [slotsRefreshKey, setSlotsRefreshKey] = useState(0);
   const formRef = useRef<HTMLDivElement>(null);
 
   const [currentStep, setCurrentStep] = useState<number>(1);
@@ -170,19 +166,24 @@ function BookAppointmentPage() {
       privacyConsent: formData.privacyConsent,
     };
 
-    // Simulate short network delay for polished UX
-    await new Promise((r) => setTimeout(r, 600));
-
-    const result = createAppointment(bookingPayload);
-
-    if (!result.success || !result.appointment) {
-      setIsSubmitting(false);
-      setErrorMessage(result.error || "Failed to process appointment. Please try again.");
-      return;
+    let result: Awaited<ReturnType<typeof submitBooking>>;
+    try {
+      result = await submitBooking({ data: bookingPayload });
+    } catch {
+      result = { ok: false, error: "Could not reach the server. Please check your connection and try again." };
     }
 
-    // Trigger transactional notifications & email acknowledgement logging
-    sendBookingAcknowledgement(result.appointment, settings);
+    if (!result.ok) {
+      setIsSubmitting(false);
+      setErrorMessage(result.error);
+      if (/slot/i.test(result.error)) {
+        // The slot was taken meanwhile: send the client back to pick another one.
+        setAppointmentTime("");
+        setSlotsRefreshKey((k) => k + 1);
+        setCurrentStep(3);
+      }
+      return;
+    }
 
     setIsSubmitting(false);
     setConfirmedBooking(result.appointment);
@@ -342,6 +343,20 @@ function BookAppointmentPage() {
           </div>
         ) : (
           <div className="max-w-4xl mx-auto">
+            {!bookingEnabled && (
+              <div className="mb-8 p-4 rounded border border-destructive/40 bg-destructive/10 text-sm text-charcoal">
+                Online booking is temporarily unavailable. Please{" "}
+                <a
+                  className="underline font-semibold"
+                  href={`https://wa.me/${settings.businessWhatsapp.replace(/[^0-9]/g, "")}`}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                >
+                  message us on WhatsApp
+                </a>{" "}
+                to book your consultation.
+              </div>
+            )}
             {/* Step Progress Tracker */}
             <div className="mb-12">
               <div className="flex items-center justify-between text-xs font-bold uppercase tracking-widest text-muted-foreground mb-3">
@@ -545,6 +560,7 @@ function BookAppointmentPage() {
 
                   <BookingCalendar
                     settings={settings}
+                    refreshKey={slotsRefreshKey}
                     selectedDate={appointmentDate}
                     selectedTime={appointmentTime}
                     onSelectDate={setAppointmentDate}
