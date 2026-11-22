@@ -23,6 +23,7 @@ import {
   MapPin,
   CalendarX,
   Check,
+  Package,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SiteHeader } from "@/components/site-header";
@@ -47,6 +48,7 @@ import {
 } from "@/lib/booking-types";
 import { type NotificationLog, customerWhatsAppConfirmationUrl } from "@/lib/notifications";
 import { brand } from "@/lib/brand";
+import { AdminProducts } from "@/components/admin-products";
 import { WHATSAPP_DISPLAY } from "@/lib/whatsapp";
 
 export const Route = createFileRoute("/admin")({
@@ -72,7 +74,7 @@ function AdminPage() {
   const [settings, setSettings] = useState<BookingSettings>(defaultBookingSettings);
   const [notifications, setNotifications] = useState<NotificationLog[]>([]);
 
-  const [activeTab, setActiveTab] = useState<"bookings" | "settings" | "notifications">("bookings");
+  const [activeTab, setActiveTab] = useState<"bookings" | "settings" | "notifications" | "products">("bookings");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedRecord, setSelectedRecord] = useState<AppointmentRecord | null>(null);
@@ -460,6 +462,17 @@ function AdminPage() {
           >
             <Mail className="w-3.5 h-3.5" /> Email Notification Log ({notifications.length})
           </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("products")}
+            className={`pb-3 cursor-pointer transition-colors flex items-center gap-1.5 ${
+              activeTab === "products"
+                ? "border-b-2 border-primary text-primary"
+                : "text-muted-foreground hover:text-charcoal"
+            }`}
+          >
+            <Package className="w-3.5 h-3.5" /> Products
+          </button>
         </div>
       </div>
 
@@ -840,6 +853,12 @@ function AdminPage() {
         )}
 
         {/* Tab 3: Notification Logs */}
+        {activeTab === "products" && (
+          <div className="bg-card border border-border p-6 md:p-8 rounded shadow-sm">
+            <AdminProducts onSessionExpired={handleFailure} />
+          </div>
+        )}
+
         {activeTab === "notifications" && (
           <div className="bg-card border border-border p-6 md:p-8 rounded shadow-sm space-y-4">
             <div>

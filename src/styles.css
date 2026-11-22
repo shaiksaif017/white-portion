@@ -202,6 +202,7 @@
 @media (max-width: 1100px) { .wordmark-horizontal img { height: 30px; } }
 @media (max-width: 640px) { .wordmark-horizontal img { height: 30px; } .wordmark-stacked img { width: 130px; } }
 .main-nav { display: flex; align-items: center; gap: clamp(20px, 3.3vw, 52px); font-size: 10px; }
+/* Keep menu labels on one line where they fit ("Services & Products" is longer than the old "Journal"). */@media (min-width: 1101px) and (max-width: 1439px) { .main-nav { gap: clamp(14px, 1.5vw, 28px); } }@media (min-width: 1280px) { .main-nav > a, .main-nav .dropdown-trigger { white-space: nowrap; } }
 .main-nav a, .footer-top-link, .footer-bottom a { transition: opacity 180ms ease; }
 .main-nav a:hover, .footer-top-link:hover, .footer-bottom a:hover { opacity: .68; }
 .header-cta { min-height: 38px; border: 1px solid var(--color-rule-light); background: transparent; color: var(--color-paper); font-size: 10px; }

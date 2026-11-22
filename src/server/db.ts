@@ -3,6 +3,7 @@
 import mysql from "mysql2/promise";
 
 import { defaultBookingSettings } from "@/lib/booking-types";
+import { DEFAULT_CATEGORIES } from "@/lib/shop-types";
 import { dbConfig } from "./env";
 
 export class DatabaseNotConfiguredError extends Error {
@@ -66,7 +67,85 @@ const SCHEMA: string[] = [
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     KEY idx_created_at (created_at)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
+  // ---------- shop ----------
+  // Uploaded files (product images, e-book PDFs) live in the database, split into
+  // 512 KB chunks, so they survive redeploys and stay under MySQL packet limits.
+  `CREATE TABLE IF NOT EXISTS files (
+    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    name VARCHAR(255) NOT NULL,
+    mime VARCHAR(100) NOT NULL,
+    size INT NOT NULL,
+    is_public TINYINT NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+  `CREATE TABLE IF NOT EXISTS file_chunks (
+    file_id INT NOT NULL,
+    idx INT NOT NULL,
+    data MEDIUMBLOB NOT NULL,
+    PRIMARY KEY (file_id, idx)
+  ) ENGINE=InnoDB`,
+  `CREATE TABLE IF NOT EXISTS product_categories (
+    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    slug VARCHAR(80) NOT NULL,
+    name VARCHAR(120) NOT NULL,
+    parent_id INT NULL,
+    kind VARCHAR(12) NOT NULL,
+    description TEXT NULL,
+    sort_order INT NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_category_slug (slug),
+    KEY idx_parent (parent_id)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+  `CREATE TABLE IF NOT EXISTS products (
+    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    slug VARCHAR(120) NOT NULL,
+    category_id INT NOT NULL,
+    name VARCHAR(160) NOT NULL,
+    short_description VARCHAR(300) NOT NULL DEFAULT '',
+    description TEXT NULL,
+    details TEXT NULL,
+    price_paise INT NOT NULL,
+    compare_at_paise INT NULL,
+    stock INT NULL,
+    status VARCHAR(10) NOT NULL DEFAULT 'draft',
+    is_otc TINYINT NOT NULL DEFAULT 0,
+    requires_prescription TINYINT NOT NULL DEFAULT 0,
+    digital_file_id INT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_product_slug (slug),
+    KEY idx_category_status (category_id, status)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+  `CREATE TABLE IF NOT EXISTS product_images (
+    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    product_id INT NOT NULL,
+    file_id INT NOT NULL,
+    sort_order INT NOT NULL DEFAULT 0,
+    KEY idx_product (product_id)
+  ) ENGINE=InnoDB`,
 ];
+
+async function seedCategories(p: mysql.Pool) {
+  for (const [i, top] of DEFAULT_CATEGORIES.entries()) {
+    await p.query(
+      "INSERT IGNORE INTO product_categories (slug, name, parent_id, kind, description, sort_order) VALUES (?, ?, NULL, ?, ?, ?)",
+      [top.slug, top.name, top.kind, top.description, i],
+    );
+    const [rows] = await p.query<mysql.RowDataPacket[]>(
+      "SELECT id FROM product_categories WHERE slug = ?",
+      [top.slug],
+    );
+    const parentId = rows[0]?.["id"];
+    if (typeof parentId !== "number") continue;
+    for (const [j, child] of top.children.entries()) {
+      await p.query(
+        "INSERT IGNORE INTO product_categories (slug, name, parent_id, kind, description, sort_order) VALUES (?, ?, ?, ?, ?, ?)",
+        [child.slug, child.name, parentId, top.kind, child.description, j],
+      );
+    }
+  }
+}
 
 let pool: mysql.Pool | undefined;
 let schemaReady: Promise<void> | undefined;
@@ -76,6 +155,7 @@ async function ensureSchema(p: mysql.Pool) {
   await p.query("INSERT IGNORE INTO booking_settings (id, data) VALUES (1, ?)", [
     JSON.stringify(defaultBookingSettings),
   ]);
+  await seedCategories(p);
 }
 
 export function isDbConfigured(): boolean {

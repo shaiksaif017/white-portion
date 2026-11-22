@@ -16,6 +16,7 @@ import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import athleteImage from "@/assets/white-portion-editorial.jpg";
 import { brand } from "@/lib/brand";
+import { ServiceEssentialsSection } from "@/components/service-essentials";
 
 export const Route = createFileRoute("/bodybuilding-prep")({
   head: () => ({
@@ -344,6 +345,8 @@ function BodybuildingPrepPage() {
       </section>
 
       {/* Final Call to Action */}
+      <ServiceEssentialsSection slug="/bodybuilding-prep" />
+
       <section className="page-section section-wrap bg-olive-deep text-paper text-center">
         <div className="max-w-2xl mx-auto space-y-6">
           <Trophy className="w-12 h-12 text-gold-accent mx-auto" />

@@ -18,6 +18,7 @@ import { SiteFooter } from "@/components/site-footer";
 import athleteImage from "@/assets/white-portion-editorial.jpg";
 import nutritionImage from "@/assets/white-portion-nutrition.jpg";
 import { brand } from "@/lib/brand";
+import { ServiceEssentialsSection } from "@/components/service-essentials";
 
 export const Route = createFileRoute("/mens-coaching")({
   head: () => ({
@@ -389,6 +390,8 @@ function MensCoachingPage() {
       </section>
 
       {/* Final Call to Action */}
+      <ServiceEssentialsSection slug="/mens-coaching" />
+
       <section className="page-section section-wrap bg-olive-deep text-paper text-center">
         <div className="max-w-2xl mx-auto space-y-6">
           <p className="text-xs font-bold tracking-widest text-gold-accent uppercase">

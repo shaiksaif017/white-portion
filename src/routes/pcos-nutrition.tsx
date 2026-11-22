@@ -17,6 +17,7 @@ import { SiteHeader } from "@/components/site-header";
 import { SiteFooter } from "@/components/site-footer";
 import nutritionImage from "@/assets/white-portion-nutrition.jpg";
 import { brand } from "@/lib/brand";
+import { ServiceEssentialsSection } from "@/components/service-essentials";
 
 export const Route = createFileRoute("/pcos-nutrition")({
   head: () => ({
@@ -311,6 +312,8 @@ function PcosNutritionPage() {
       </section>
 
       {/* Final Call to Action */}
+      <ServiceEssentialsSection slug="/pcos-nutrition" />
+
       <section className="page-section section-wrap bg-olive-deep text-paper text-center">
         <div className="max-w-2xl mx-auto space-y-6">
           <ShieldCheck className="w-12 h-12 text-gold-accent mx-auto" />

@@ -21,9 +21,14 @@ import { Route as MensCoachingRouteImport } from './routes/mens-coaching'
 import { Route as PcosNutritionRouteImport } from './routes/pcos-nutrition'
 import { Route as PersonalisedDietRouteImport } from './routes/personalised-diet'
 import { Route as ServicesRouteImport } from './routes/services'
+import { Route as ServicesProductsRouteImport } from './routes/services-products'
 import { Route as SportsNutritionRouteImport } from './routes/sports-nutrition'
 import { Route as StoriesRouteImport } from './routes/stories'
 import { Route as WomensWellnessRouteImport } from './routes/womens-wellness'
+import { Route as MediaIdRouteImport } from './routes/media.$id'
+import { Route as ProductSlugRouteImport } from './routes/product.$slug'
+import { Route as ProductsCategoryRouteImport } from './routes/products.$category'
+import { Route as ApiAdminUploadRouteImport } from './routes/api.admin.upload'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -85,6 +90,11 @@ const ServicesRoute = ServicesRouteImport.update({
   path: '/services',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ServicesProductsRoute = ServicesProductsRouteImport.update({
+  id: '/services-products',
+  path: '/services-products',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SportsNutritionRoute = SportsNutritionRouteImport.update({
   id: '/sports-nutrition',
   path: '/sports-nutrition',
@@ -98,6 +108,26 @@ const StoriesRoute = StoriesRouteImport.update({
 const WomensWellnessRoute = WomensWellnessRouteImport.update({
   id: '/womens-wellness',
   path: '/womens-wellness',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const MediaIdRoute = MediaIdRouteImport.update({
+  id: '/media/$id',
+  path: '/media/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProductSlugRoute = ProductSlugRouteImport.update({
+  id: '/product/$slug',
+  path: '/product/$slug',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ProductsCategoryRoute = ProductsCategoryRouteImport.update({
+  id: '/products/$category',
+  path: '/products/$category',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiAdminUploadRoute = ApiAdminUploadRouteImport.update({
+  id: '/api/admin/upload',
+  path: '/api/admin/upload',
   getParentRoute: () => rootRouteImport,
 } as any)
 
@@ -114,9 +144,14 @@ export interface FileRoutesByFullPath {
   '/pcos-nutrition': typeof PcosNutritionRoute
   '/personalised-diet': typeof PersonalisedDietRoute
   '/services': typeof ServicesRoute
+  '/services-products': typeof ServicesProductsRoute
   '/sports-nutrition': typeof SportsNutritionRoute
   '/stories': typeof StoriesRoute
   '/womens-wellness': typeof WomensWellnessRoute
+  '/media/$id': typeof MediaIdRoute
+  '/product/$slug': typeof ProductSlugRoute
+  '/products/$category': typeof ProductsCategoryRoute
+  '/api/admin/upload': typeof ApiAdminUploadRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -131,9 +166,14 @@ export interface FileRoutesByTo {
   '/pcos-nutrition': typeof PcosNutritionRoute
   '/personalised-diet': typeof PersonalisedDietRoute
   '/services': typeof ServicesRoute
+  '/services-products': typeof ServicesProductsRoute
   '/sports-nutrition': typeof SportsNutritionRoute
   '/stories': typeof StoriesRoute
   '/womens-wellness': typeof WomensWellnessRoute
+  '/media/$id': typeof MediaIdRoute
+  '/product/$slug': typeof ProductSlugRoute
+  '/products/$category': typeof ProductsCategoryRoute
+  '/api/admin/upload': typeof ApiAdminUploadRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -149,9 +189,14 @@ export interface FileRoutesById {
   '/pcos-nutrition': typeof PcosNutritionRoute
   '/personalised-diet': typeof PersonalisedDietRoute
   '/services': typeof ServicesRoute
+  '/services-products': typeof ServicesProductsRoute
   '/sports-nutrition': typeof SportsNutritionRoute
   '/stories': typeof StoriesRoute
   '/womens-wellness': typeof WomensWellnessRoute
+  '/media/$id': typeof MediaIdRoute
+  '/product/$slug': typeof ProductSlugRoute
+  '/products/$category': typeof ProductsCategoryRoute
+  '/api/admin/upload': typeof ApiAdminUploadRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -168,9 +213,14 @@ export interface FileRouteTypes {
     | '/pcos-nutrition'
     | '/personalised-diet'
     | '/services'
+    | '/services-products'
     | '/sports-nutrition'
     | '/stories'
     | '/womens-wellness'
+    | '/media/$id'
+    | '/product/$slug'
+    | '/products/$category'
+    | '/api/admin/upload'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -185,9 +235,14 @@ export interface FileRouteTypes {
     | '/pcos-nutrition'
     | '/personalised-diet'
     | '/services'
+    | '/services-products'
     | '/sports-nutrition'
     | '/stories'
     | '/womens-wellness'
+    | '/media/$id'
+    | '/product/$slug'
+    | '/products/$category'
+    | '/api/admin/upload'
   id:
     | '__root__'
     | '/'
@@ -202,9 +257,14 @@ export interface FileRouteTypes {
     | '/pcos-nutrition'
     | '/personalised-diet'
     | '/services'
+    | '/services-products'
     | '/sports-nutrition'
     | '/stories'
     | '/womens-wellness'
+    | '/media/$id'
+    | '/product/$slug'
+    | '/products/$category'
+    | '/api/admin/upload'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -220,9 +280,14 @@ export interface RootRouteChildren {
   PcosNutritionRoute: typeof PcosNutritionRoute
   PersonalisedDietRoute: typeof PersonalisedDietRoute
   ServicesRoute: typeof ServicesRoute
+  ServicesProductsRoute: typeof ServicesProductsRoute
   SportsNutritionRoute: typeof SportsNutritionRoute
   StoriesRoute: typeof StoriesRoute
   WomensWellnessRoute: typeof WomensWellnessRoute
+  MediaIdRoute: typeof MediaIdRoute
+  ProductSlugRoute: typeof ProductSlugRoute
+  ProductsCategoryRoute: typeof ProductsCategoryRoute
+  ApiAdminUploadRoute: typeof ApiAdminUploadRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -311,6 +376,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ServicesRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/services-products': {
+      id: '/services-products'
+      path: '/services-products'
+      fullPath: '/services-products'
+      preLoaderRoute: typeof ServicesProductsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/sports-nutrition': {
       id: '/sports-nutrition'
       path: '/sports-nutrition'
@@ -332,6 +404,34 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WomensWellnessRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/media/$id': {
+      id: '/media/$id'
+      path: '/media/$id'
+      fullPath: '/media/$id'
+      preLoaderRoute: typeof MediaIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/product/$slug': {
+      id: '/product/$slug'
+      path: '/product/$slug'
+      fullPath: '/product/$slug'
+      preLoaderRoute: typeof ProductSlugRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/products/$category': {
+      id: '/products/$category'
+      path: '/products/$category'
+      fullPath: '/products/$category'
+      preLoaderRoute: typeof ProductsCategoryRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/admin/upload': {
+      id: '/api/admin/upload'
+      path: '/api/admin/upload'
+      fullPath: '/api/admin/upload'
+      preLoaderRoute: typeof ApiAdminUploadRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -348,9 +448,14 @@ const rootRouteChildren: RootRouteChildren = {
   PcosNutritionRoute: PcosNutritionRoute,
   PersonalisedDietRoute: PersonalisedDietRoute,
   ServicesRoute: ServicesRoute,
+  ServicesProductsRoute: ServicesProductsRoute,
   SportsNutritionRoute: SportsNutritionRoute,
   StoriesRoute: StoriesRoute,
   WomensWellnessRoute: WomensWellnessRoute,
+  MediaIdRoute: MediaIdRoute,
+  ProductSlugRoute: ProductSlugRoute,
+  ProductsCategoryRoute: ProductsCategoryRoute,
+  ApiAdminUploadRoute: ApiAdminUploadRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

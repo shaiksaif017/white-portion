@@ -53,8 +53,8 @@ export function SiteHeader({ isSolid = false }: SiteHeaderProps) {
         <Link to="/stories" onClick={closeMenu} activeProps={{ className: "nav-active" }}>
           Client Stories
         </Link>
-        <Link to="/blog" onClick={closeMenu} activeProps={{ className: "nav-active" }}>
-          Journal
+        <Link to="/services-products" onClick={closeMenu} activeProps={{ className: "nav-active" }}>
+          Services & Products
         </Link>
         <Link to="/book-appointment" onClick={closeMenu} className="font-bold text-gold-accent" activeProps={{ className: "nav-active" }}>
           BOOK AN APPOINTMENT
