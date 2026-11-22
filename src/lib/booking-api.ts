@@ -33,7 +33,7 @@ import {
 import * as bookings from "@/server/bookings";
 import { isDbConfigured } from "@/server/db";
 import { authConfig, isProduction } from "@/server/env";
-import { sendEmail, sendEmails, smtpSummary } from "@/server/mailer";
+import { resolveSmtp, saveSmtpPassword, sendEmail, sendEmails, smtpSummary } from "@/server/mailer";
 
 const UNAVAILABLE = "Online booking is temporarily unavailable. Please contact us on WhatsApp.";
 
@@ -253,34 +253,63 @@ export const adminSetSlotBlocked = createServerFn({ method: "POST" })
     }
   });
 
+type TestEmailResult =
+  | {
+      ok: true;
+      result: "SENT" | "FAILED" | "SKIPPED";
+      error?: string | undefined;
+      to: string;
+      smtp: ReturnType<typeof smtpSummary>;
+    }
+  | Fail;
+
+async function runTestEmail(): Promise<TestEmailResult> {
+  const settings = await bookings.getSettings();
+  const to = settings.adminNotificationEmail;
+  const res = await sendEmail({
+    type: "TEST_EMAIL",
+    to,
+    subject: "Test email from your White Portion Wellness website",
+    text: "This is a test email from your website's admin portal.\n\nIf you can read this, booking emails are working.",
+  });
+  return {
+    ok: true,
+    result: res.status,
+    error: res.error,
+    to,
+    smtp: smtpSummary(await resolveSmtp()),
+  };
+}
+
 export const adminSendTestEmail = createServerFn({ method: "POST" }).handler(
-  async (): Promise<
-    | {
-        ok: true;
-        result: "SENT" | "FAILED" | "SKIPPED";
-        error?: string | undefined;
-        to: string;
-        smtp: ReturnType<typeof smtpSummary>;
-      }
-    | Fail
-  > => {
+  async (): Promise<TestEmailResult> => {
     if (!isAdmin()) return unauthorized;
     try {
-      const settings = await bookings.getSettings();
-      const to = settings.adminNotificationEmail;
-      const res = await sendEmail({
-        type: "TEST_EMAIL",
-        to,
-        subject: "Test email from your White Portion Wellness website",
-        text: "This is a test email from your website's admin portal.\n\nIf you can read this, booking emails are working.",
-      });
-      return { ok: true, result: res.status, error: res.error, to, smtp: smtpSummary() };
+      return await runTestEmail();
     } catch (error) {
       console.error("[admin] test email failed", error);
       return { ok: false, error: "Could not run the email test." };
     }
   },
 );
+
+// Owner sets the mailbox password here instead of in Hostinger's settings. It is
+// stored encrypted and never sent back to the browser.
+export const adminSetEmailPassword = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => z.object({ password: z.string().min(1).max(200) }).parse(d))
+  .handler(async ({ data }): Promise<TestEmailResult> => {
+    if (!isAdmin()) return unauthorized;
+    if (!rateLimit(`smtp-pass:${clientIp()}`, 10, 15 * 60_000)) {
+      return { ok: false, error: "Too many attempts. Please wait 15 minutes." };
+    }
+    try {
+      await saveSmtpPassword(data.password);
+      return await runTestEmail();
+    } catch (error) {
+      console.error("[admin] save email password failed", error);
+      return { ok: false, error: "Could not save the email password." };
+    }
+  });
 
 export const adminExportCsv = createServerFn({ method: "GET" }).handler(
   async (): Promise<{ ok: true; csv: string } | Fail> => {

@@ -30,6 +30,7 @@ import { SiteFooter } from "@/components/site-footer";
 import {
   adminExportCsv,
   adminSendTestEmail,
+  adminSetEmailPassword,
   adminLogin,
   adminLogout,
   adminSaveSettings,
@@ -164,17 +165,29 @@ function AdminPage() {
   const [testEmailRunning, setTestEmailRunning] = useState(false);
   const [testEmailResult, setTestEmailResult] = useState<string | null>(null);
 
-  async function handleTestEmail() {
+  const [emailPassword, setEmailPassword] = useState("");
+
+  async function handleSaveEmailPassword(e: React.FormEvent) {
+    e.preventDefault();
+    if (!emailPassword) return;
+    await handleTestEmail(emailPassword);
+    setEmailPassword("");
+  }
+
+  async function handleTestEmail(newPassword?: string) {
     setTestEmailRunning(true);
     setTestEmailResult(null);
     try {
-      const res = await adminSendTestEmail();
+      const res = newPassword
+        ? await adminSetEmailPassword({ data: { password: newPassword } })
+        : await adminSendTestEmail();
       if (!res.ok) return handleFailure(res.error);
       const smtp = res.smtp
         ? [
             `Mail server: ${res.smtp.host}:${res.smtp.port}`,
             `Login: ${res.smtp.user}`,
             `From: ${res.smtp.from}`,
+            `Password from: ${res.smtp.passwordSource}`,
             `Password loaded: ${res.smtp.passwordLength} characters${
               res.smtp.passwordWarnings.length
                 ? ` - WARNING: ${res.smtp.passwordWarnings.join("; ")}`
@@ -182,7 +195,7 @@ function AdminPage() {
             }`,
             `Server last restarted: ${new Date(res.smtp.serverStartedAt).toLocaleString()}`,
           ].join("\n")
-        : "Mail server: NOT CONFIGURED (SMTP_HOST / SMTP_USER / SMTP_PASS missing)";
+        : "Mail server: NOT CONFIGURED (enter the email password below, and check SMTP_HOST / SMTP_USER)";
       setTestEmailResult(
         `Result: ${res.result}\nSent to: ${res.to}\n${smtp}${res.error ? `\nReason: ${res.error}` : ""}`,
       );
@@ -836,13 +849,43 @@ function AdminPage() {
               <p className="text-xs text-muted-foreground">
                 All client acknowledgement and administrator intake notification events are logged here.
               </p>
+              <form
+                onSubmit={handleSaveEmailPassword}
+                className="mt-4 p-4 rounded border border-border bg-secondary/30 space-y-2"
+              >
+                <label className="block text-xs font-bold text-charcoal">
+                  Email account password (for care@officialwhiteportion.com)
+                </label>
+                <p className="text-[11px] text-muted-foreground">
+                  Type the same password you use at mail.hostinger.com, without "care@" in front. It is
+                  stored encrypted and never shown again.
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  <input
+                    type="password"
+                    autoComplete="new-password"
+                    value={emailPassword}
+                    onChange={(e) => setEmailPassword(e.target.value)}
+                    placeholder="Mailbox password"
+                    className="flex-1 min-w-[200px] p-2.5 rounded border border-border bg-background text-xs"
+                  />
+                  <Button
+                    type="submit"
+                    variant="hero"
+                    className="text-xs"
+                    disabled={testEmailRunning || !emailPassword}
+                  >
+                    {testEmailRunning ? "Saving & testing…" : "Save & send test"}
+                  </Button>
+                </div>
+              </form>
               <div className="mt-4 flex flex-wrap items-center gap-3">
                 <Button
                   type="button"
                   variant="outline"
                   className="text-xs"
                   disabled={testEmailRunning}
-                  onClick={handleTestEmail}
+                  onClick={() => handleTestEmail()}
                 >
                   {testEmailRunning ? "Sending test email…" : "Send test email"}
                 </Button>

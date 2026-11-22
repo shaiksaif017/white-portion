@@ -38,13 +38,14 @@ export function authConfig() {
   return { passwordHash, sessionSecret };
 }
 
-export function smtpConfig() {
+// Mail server settings. The password may instead come from the admin portal
+// (stored encrypted in the database), so `envPass` can be undefined here.
+export function smtpBaseConfig() {
   const host = read("SMTP_HOST");
   const user = read("SMTP_USER");
-  const pass = read("SMTP_PASS");
-  if (!host || !user || !pass) return null;
+  if (!host || !user) return null;
   const port = Number(read("SMTP_PORT") ?? 465);
-  return { host, port, user, pass, from: read("MAIL_FROM") ?? user };
+  return { host, port, user, from: read("MAIL_FROM") ?? user, envPass: read("SMTP_PASS") };
 }
 
 export function isProduction() {

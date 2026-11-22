@@ -5,14 +5,55 @@ import nodemailer, { type Transporter } from "nodemailer";
 import { brand } from "@/lib/brand";
 import type { EmailMessage } from "@/lib/notifications";
 import { logNotification } from "./bookings";
-import { smtpConfig } from "./env";
+import { smtpBaseConfig } from "./env";
+import { getSecret, setSecret } from "./secrets";
+
+const SMTP_SECRET = "smtp_password";
+
+export interface ResolvedSmtp {
+  host: string;
+  port: number;
+  user: string;
+  from: string;
+  pass: string;
+  passwordSource: "admin portal" | "hosting environment variable";
+}
+
+// Password set in the admin portal wins over the SMTP_PASS environment variable.
+export async function resolveSmtp(): Promise<ResolvedSmtp | null> {
+  const base = smtpBaseConfig();
+  if (!base) return null;
+  let stored: string | null = null;
+  try {
+    stored = await getSecret(SMTP_SECRET);
+  } catch (e) {
+    console.error("[mailer] could not read stored email password", e);
+  }
+  const pass = stored ?? base.envPass;
+  if (!pass) return null;
+  return {
+    host: base.host,
+    port: base.port,
+    user: base.user,
+    from: base.from,
+    pass,
+    passwordSource: stored ? "admin portal" : "hosting environment variable",
+  };
+}
+
+export async function saveSmtpPassword(password: string): Promise<void> {
+  await setSecret(SMTP_SECRET, password);
+}
 
 let transporter: Transporter | undefined;
+let transporterKey = "";
 
-function getTransporter(): { transporter: Transporter; from: string } | null {
-  const config = smtpConfig();
+async function getTransporter(): Promise<{ transporter: Transporter; from: string } | null> {
+  const config = await resolveSmtp();
   if (!config) return null;
-  if (!transporter) {
+  const key = `${config.host}|${config.port}|${config.user}|${config.pass}`;
+  if (!transporter || key !== transporterKey) {
+    transporterKey = key;
     transporter = nodemailer.createTransport({
       host: config.host,
       port: config.port,
@@ -44,7 +85,7 @@ export async function sendEmail(message: EmailMessage, replyTo?: string): Promis
   let status: "SENT" | "FAILED" | "SKIPPED" = "SKIPPED";
   let error: string | undefined;
 
-  const mail = getTransporter();
+  const mail = await getTransporter();
   if (mail && message.to) {
     try {
       await mail.transporter.sendMail({
@@ -81,10 +122,10 @@ export async function sendEmail(message: EmailMessage, replyTo?: string): Promis
 }
 
 // Safe summary of the mail settings the server actually loaded (no password).
-export function smtpSummary() {
-  const config = smtpConfig();
+export function smtpSummary(config: ResolvedSmtp | null) {
   if (!config) return null;
   return {
+    passwordSource: config.passwordSource,
     host: config.host,
     port: config.port,
     user: config.user,
