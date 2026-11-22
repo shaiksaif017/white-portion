@@ -13,7 +13,7 @@ export function SiteFooter() {
   return (
     <footer className="site-footer">
       <div className="footer-top">
-        <Wordmark className="footer-wordmark" />
+        <Wordmark className="footer-wordmark" variant="stacked" />
         <p>
           Precision Nutrition.<br />
           <em>Powerful Transformation.</em>

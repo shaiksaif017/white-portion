@@ -195,6 +195,12 @@
 .wordmark-line span { font-weight: 500; }
 .wordmark-sub { display: inline-flex; align-items: flex-start; gap: 2px; font-size: 8px; font-weight: 650; letter-spacing: 0.42em; }
 .wordmark i { margin-top: -1px; font-size: 7px; font-style: normal; letter-spacing: 0; }
+.wordmark img { display: block; max-width: 100%; height: auto; }
+.wordmark-horizontal { flex-shrink: 0; margin-right: clamp(16px, 2.5vw, 40px); }
+.wordmark-horizontal img { width: auto; height: 40px; }
+.wordmark-stacked img { width: 150px; }
+@media (max-width: 1100px) { .wordmark-horizontal img { height: 30px; } }
+@media (max-width: 640px) { .wordmark-horizontal img { height: 30px; } .wordmark-stacked img { width: 130px; } }
 .main-nav { display: flex; align-items: center; gap: clamp(20px, 3.3vw, 52px); font-size: 10px; }
 .main-nav a, .footer-top-link, .footer-bottom a { transition: opacity 180ms ease; }
 .main-nav a:hover, .footer-top-link:hover, .footer-bottom a:hover { opacity: .68; }
