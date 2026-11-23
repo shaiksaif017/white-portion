@@ -1,20 +1,26 @@
-import { createFileRoute, Link, notFound } from "@tanstack/react-router";
-import { ArrowLeft, MessageCircle } from "lucide-react";
+import { createFileRoute, Link, notFound, useNavigate } from "@tanstack/react-router";
+import { ArrowLeft, Check, MessageCircle, Minus, Plus, ShoppingBag } from "lucide-react";
 import { useState } from "react";
 
 import { Price, ProductCard, ProductImage, TrustRow } from "@/components/shop-ui";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { brand } from "@/lib/brand";
+import { cart } from "@/lib/cart";
+import { getShopStatus } from "@/lib/order-api";
+import { MAX_QTY } from "@/lib/order-types";
 import { getProductPage } from "@/lib/shop-api";
 import { AVAILABILITY_LABEL, KIND_LABEL, formatINR } from "@/lib/shop-types";
 import { whatsappUrl } from "@/lib/whatsapp";
 
 export const Route = createFileRoute("/product/$slug")({
   loader: async ({ params }) => {
-    const { product } = await getProductPage({ data: { slug: params.slug } });
+    const [{ product }, status] = await Promise.all([
+      getProductPage({ data: { slug: params.slug } }),
+      getShopStatus(),
+    ]);
     if (!product) throw notFound();
-    return { product };
+    return { product, paymentsEnabled: status.paymentsEnabled };
   },
   head: ({ loaderData }) => {
     const p = loaderData?.product;
@@ -33,7 +39,7 @@ export const Route = createFileRoute("/product/$slug")({
 });
 
 function ProductPage() {
-  const { product: p } = Route.useLoaderData();
+  const { product: p, paymentsEnabled } = Route.useLoaderData();
   const [active, setActive] = useState(0);
   const images = p.imageIds.length ? p.imageIds : [null];
   const enquiry = whatsappUrl(
@@ -125,7 +131,9 @@ function ProductPage() {
             )}
 
             <div data-purchase-area className="pt-2 space-y-3">
-              {p.purchasable ? (
+              {p.purchasable && paymentsEnabled ? (
+                <AddToCart productId={p.id} digital={p.kind === "ebook" || p.kind === "course"} />
+              ) : p.purchasable ? (
                 <p className="text-xs text-muted-foreground">
                   Online checkout is opening soon. Message us to order now.
                 </p>
@@ -140,9 +148,16 @@ function ProductPage() {
                 href={enquiry}
                 target="_blank"
                 rel="noopener noreferrer"
-                className="inline-flex items-center gap-2 px-5 py-3 rounded bg-primary text-primary-foreground text-xs font-bold tracking-wider hover:bg-olive-deep transition-colors"
+                className={
+                  p.purchasable && paymentsEnabled
+                    ? "inline-flex items-center gap-2 text-xs font-semibold text-primary hover:underline"
+                    : "inline-flex items-center gap-2 px-5 py-3 rounded bg-primary text-primary-foreground text-xs font-bold tracking-wider hover:bg-olive-deep transition-colors"
+                }
               >
-                <MessageCircle className="w-4 h-4" aria-hidden="true" /> ENQUIRE ON WHATSAPP
+                <MessageCircle className="w-4 h-4" aria-hidden="true" />{" "}
+                {p.purchasable && paymentsEnabled
+                  ? "Questions? Ask us on WhatsApp"
+                  : "ENQUIRE ON WHATSAPP"}
               </a>
             </div>
 
@@ -207,5 +222,79 @@ function ProductPage() {
 
       <SiteFooter />
     </main>
+  );
+}
+
+function AddToCart({ productId, digital }: { productId: number; digital: boolean }) {
+  const [qty, setQty] = useState(1);
+  const [added, setAdded] = useState(false);
+  const navigate = useNavigate();
+
+  function add() {
+    cart.add(productId, qty);
+    setAdded(true);
+    window.setTimeout(() => setAdded(false), 2500);
+  }
+
+  return (
+    <div className="space-y-3">
+      <div className="flex flex-wrap items-center gap-3">
+        {!digital && (
+          <div className="inline-flex items-center border border-border rounded bg-background">
+            <button
+              type="button"
+              aria-label="Decrease quantity"
+              onClick={() => setQty((q) => Math.max(1, q - 1))}
+              className="p-3 text-charcoal hover:text-primary disabled:opacity-40"
+              disabled={qty <= 1}
+            >
+              <Minus className="w-3.5 h-3.5" aria-hidden="true" />
+            </button>
+            <span className="w-8 text-center text-sm font-semibold" aria-live="polite">
+              {qty}
+            </span>
+            <button
+              type="button"
+              aria-label="Increase quantity"
+              onClick={() => setQty((q) => Math.min(MAX_QTY, q + 1))}
+              className="p-3 text-charcoal hover:text-primary disabled:opacity-40"
+              disabled={qty >= MAX_QTY}
+            >
+              <Plus className="w-3.5 h-3.5" aria-hidden="true" />
+            </button>
+          </div>
+        )}
+        <button
+          type="button"
+          onClick={add}
+          className="inline-flex items-center gap-2 px-5 py-3 rounded border border-primary text-primary text-xs font-bold tracking-wider hover:bg-primary hover:text-primary-foreground transition-colors"
+        >
+          {added ? (
+            <Check className="w-4 h-4" aria-hidden="true" />
+          ) : (
+            <ShoppingBag className="w-4 h-4" aria-hidden="true" />
+          )}
+          {added ? "ADDED TO CART" : "ADD TO CART"}
+        </button>
+        <button
+          type="button"
+          onClick={() => {
+            cart.add(productId, qty);
+            void navigate({ to: "/checkout" });
+          }}
+          className="inline-flex items-center gap-2 px-5 py-3 rounded bg-primary text-primary-foreground text-xs font-bold tracking-wider hover:bg-olive-deep transition-colors"
+        >
+          BUY NOW
+        </button>
+      </div>
+      {added && (
+        <p className="text-xs text-primary" role="status">
+          Added.{" "}
+          <Link to="/cart" className="font-semibold underline">
+            View cart
+          </Link>
+        </p>
+      )}
+    </div>
   );
 }

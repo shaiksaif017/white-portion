@@ -24,6 +24,7 @@ import {
   CalendarX,
   Check,
   Package,
+  ShoppingBag,
 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { SiteHeader } from "@/components/site-header";
@@ -49,6 +50,7 @@ import {
 import { type NotificationLog, customerWhatsAppConfirmationUrl } from "@/lib/notifications";
 import { brand } from "@/lib/brand";
 import { AdminProducts } from "@/components/admin-products";
+import { AdminOrders } from "@/components/admin-orders";
 import { WHATSAPP_DISPLAY } from "@/lib/whatsapp";
 
 export const Route = createFileRoute("/admin")({
@@ -74,7 +76,7 @@ function AdminPage() {
   const [settings, setSettings] = useState<BookingSettings>(defaultBookingSettings);
   const [notifications, setNotifications] = useState<NotificationLog[]>([]);
 
-  const [activeTab, setActiveTab] = useState<"bookings" | "settings" | "notifications" | "products">("bookings");
+  const [activeTab, setActiveTab] = useState<"bookings" | "settings" | "notifications" | "products" | "orders">("bookings");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedRecord, setSelectedRecord] = useState<AppointmentRecord | null>(null);
@@ -428,7 +430,7 @@ function AdminPage() {
 
       {/* Navigation Tabs */}
       <div className="max-w-7xl mx-auto px-6 md:px-12 mt-8">
-        <div className="flex border-b border-border space-x-8 text-xs font-bold uppercase tracking-wider">
+        <div className="flex border-b border-border space-x-8 text-xs font-bold uppercase tracking-wider overflow-x-auto whitespace-nowrap">
           <button
             type="button"
             onClick={() => setActiveTab("bookings")}
@@ -472,6 +474,17 @@ function AdminPage() {
             }`}
           >
             <Package className="w-3.5 h-3.5" /> Products
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveTab("orders")}
+            className={`pb-3 cursor-pointer transition-colors flex items-center gap-1.5 ${
+              activeTab === "orders"
+                ? "border-b-2 border-primary text-primary"
+                : "text-muted-foreground hover:text-charcoal"
+            }`}
+          >
+            <ShoppingBag className="w-3.5 h-3.5" /> Orders
           </button>
         </div>
       </div>
@@ -856,6 +869,12 @@ function AdminPage() {
         {activeTab === "products" && (
           <div className="bg-card border border-border p-6 md:p-8 rounded shadow-sm">
             <AdminProducts onSessionExpired={handleFailure} />
+          </div>
+        )}
+
+        {activeTab === "orders" && (
+          <div className="bg-card border border-border p-6 md:p-8 rounded shadow-sm">
+            <AdminOrders onSessionExpired={handleFailure} />
           </div>
         )}
 

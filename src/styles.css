@@ -209,6 +209,13 @@
 .header-cta:hover { background: var(--color-paper); color: var(--color-olive-deep); }
 .header-cta svg { width: 14px; height: 14px; }
 .menu-toggle { display: none; color: var(--color-paper); }
+.header-actions { display: flex; align-items: center; gap: 14px; }
+.header-cart { position: relative; display: inline-flex; width: 38px; height: 38px; align-items: center; justify-content: center; color: var(--color-paper); transition: opacity 180ms ease; }
+.header-cart:hover { opacity: .68; }
+.header-cart svg { width: 20px; height: 20px; }
+.header-cart-count { position: absolute; top: 2px; right: 0; min-width: 17px; height: 17px; padding: 0 4px; border-radius: 9px; background: var(--color-primary); color: var(--color-paper); font-size: 9px; font-weight: 700; line-height: 17px; text-align: center; }
+/* Between phone and desktop the menu already has a Book link; drop the duplicate button so the header fits. */
+@media (max-width: 960px) { .header-cta { display: none; } .header-actions { gap: 6px; } }
 .hero-section { position: relative; display: flex; min-height: min(790px, 100svh); min-height: max(660px, 100svh); align-items: center; overflow: hidden; background: var(--color-charcoal); color: var(--color-paper); }
 .hero-photo, .belief-section > img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; object-position: 62% 48%; }
 .hero-shade, .belief-overlay { position: absolute; inset: 0; background: linear-gradient(90deg, var(--color-overlay-strong) 0%, var(--color-overlay-medium) 38%, var(--color-overlay-light) 100%); }

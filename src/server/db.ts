@@ -124,6 +124,50 @@ const SCHEMA: string[] = [
     sort_order INT NOT NULL DEFAULT 0,
     KEY idx_product (product_id)
   ) ENGINE=InnoDB`,
+
+  // ---------- orders ----------
+  `CREATE TABLE IF NOT EXISTS orders (
+    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    order_number VARCHAR(20) NOT NULL,
+    access_token CHAR(48) NOT NULL,
+    payment_status VARCHAR(10) NOT NULL DEFAULT 'pending',
+    fulfilment_status VARCHAR(12) NOT NULL DEFAULT 'new',
+    name VARCHAR(120) NOT NULL,
+    email VARCHAR(254) NOT NULL,
+    phone VARCHAR(20) NOT NULL,
+    address TEXT NULL,
+    notes TEXT NULL,
+    subtotal_paise INT NOT NULL,
+    shipping_paise INT NOT NULL,
+    total_paise INT NOT NULL,
+    razorpay_order_id VARCHAR(40) NULL,
+    razorpay_payment_id VARCHAR(40) NULL,
+    tracking_info VARCHAR(500) NOT NULL DEFAULT '',
+    admin_notes TEXT NULL,
+    paid_at DATETIME NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_order_number (order_number),
+    UNIQUE KEY uniq_rzp_order (razorpay_order_id),
+    KEY idx_created (created_at)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+  `CREATE TABLE IF NOT EXISTS order_items (
+    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    order_id INT NOT NULL,
+    product_id INT NULL,
+    product_slug VARCHAR(120) NULL,
+    name VARCHAR(160) NOT NULL,
+    kind VARCHAR(12) NOT NULL,
+    unit_paise INT NOT NULL,
+    qty INT NOT NULL,
+    digital_file_id INT NULL,
+    KEY idx_order (order_id)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+  `CREATE TABLE IF NOT EXISTS shop_settings (
+    id TINYINT NOT NULL PRIMARY KEY,
+    data TEXT NOT NULL,
+    updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
 ];
 
 async function seedCategories(p: mysql.Pool) {

@@ -16,6 +16,8 @@ import { Route as ApproachRouteImport } from './routes/approach'
 import { Route as BlogRouteImport } from './routes/blog'
 import { Route as BodybuildingPrepRouteImport } from './routes/bodybuilding-prep'
 import { Route as BookAppointmentRouteImport } from './routes/book-appointment'
+import { Route as CartRouteImport } from './routes/cart'
+import { Route as CheckoutRouteImport } from './routes/checkout'
 import { Route as ContactRouteImport } from './routes/contact'
 import { Route as MensCoachingRouteImport } from './routes/mens-coaching'
 import { Route as PcosNutritionRouteImport } from './routes/pcos-nutrition'
@@ -25,10 +27,13 @@ import { Route as ServicesProductsRouteImport } from './routes/services-products
 import { Route as SportsNutritionRouteImport } from './routes/sports-nutrition'
 import { Route as StoriesRouteImport } from './routes/stories'
 import { Route as WomensWellnessRouteImport } from './routes/womens-wellness'
+import { Route as ApiDownloadRouteImport } from './routes/api.download'
 import { Route as MediaIdRouteImport } from './routes/media.$id'
+import { Route as OrderNumberRouteImport } from './routes/order.$number'
 import { Route as ProductSlugRouteImport } from './routes/product.$slug'
 import { Route as ProductsCategoryRouteImport } from './routes/products.$category'
 import { Route as ApiAdminUploadRouteImport } from './routes/api.admin.upload'
+import { Route as ApiRazorpayWebhookRouteImport } from './routes/api.razorpay.webhook'
 
 const IndexRoute = IndexRouteImport.update({
   id: '/',
@@ -63,6 +68,16 @@ const BodybuildingPrepRoute = BodybuildingPrepRouteImport.update({
 const BookAppointmentRoute = BookAppointmentRouteImport.update({
   id: '/book-appointment',
   path: '/book-appointment',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CartRoute = CartRouteImport.update({
+  id: '/cart',
+  path: '/cart',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const CheckoutRoute = CheckoutRouteImport.update({
+  id: '/checkout',
+  path: '/checkout',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ContactRoute = ContactRouteImport.update({
@@ -110,9 +125,19 @@ const WomensWellnessRoute = WomensWellnessRouteImport.update({
   path: '/womens-wellness',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiDownloadRoute = ApiDownloadRouteImport.update({
+  id: '/api/download',
+  path: '/api/download',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const MediaIdRoute = MediaIdRouteImport.update({
   id: '/media/$id',
   path: '/media/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OrderNumberRoute = OrderNumberRouteImport.update({
+  id: '/order/$number',
+  path: '/order/$number',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProductSlugRoute = ProductSlugRouteImport.update({
@@ -130,6 +155,11 @@ const ApiAdminUploadRoute = ApiAdminUploadRouteImport.update({
   path: '/api/admin/upload',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ApiRazorpayWebhookRoute = ApiRazorpayWebhookRouteImport.update({
+  id: '/api/razorpay/webhook',
+  path: '/api/razorpay/webhook',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -139,6 +169,8 @@ export interface FileRoutesByFullPath {
   '/blog': typeof BlogRoute
   '/bodybuilding-prep': typeof BodybuildingPrepRoute
   '/book-appointment': typeof BookAppointmentRoute
+  '/cart': typeof CartRoute
+  '/checkout': typeof CheckoutRoute
   '/contact': typeof ContactRoute
   '/mens-coaching': typeof MensCoachingRoute
   '/pcos-nutrition': typeof PcosNutritionRoute
@@ -148,10 +180,13 @@ export interface FileRoutesByFullPath {
   '/sports-nutrition': typeof SportsNutritionRoute
   '/stories': typeof StoriesRoute
   '/womens-wellness': typeof WomensWellnessRoute
+  '/api/download': typeof ApiDownloadRoute
   '/media/$id': typeof MediaIdRoute
+  '/order/$number': typeof OrderNumberRoute
   '/product/$slug': typeof ProductSlugRoute
   '/products/$category': typeof ProductsCategoryRoute
   '/api/admin/upload': typeof ApiAdminUploadRoute
+  '/api/razorpay/webhook': typeof ApiRazorpayWebhookRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -161,6 +196,8 @@ export interface FileRoutesByTo {
   '/blog': typeof BlogRoute
   '/bodybuilding-prep': typeof BodybuildingPrepRoute
   '/book-appointment': typeof BookAppointmentRoute
+  '/cart': typeof CartRoute
+  '/checkout': typeof CheckoutRoute
   '/contact': typeof ContactRoute
   '/mens-coaching': typeof MensCoachingRoute
   '/pcos-nutrition': typeof PcosNutritionRoute
@@ -170,10 +207,13 @@ export interface FileRoutesByTo {
   '/sports-nutrition': typeof SportsNutritionRoute
   '/stories': typeof StoriesRoute
   '/womens-wellness': typeof WomensWellnessRoute
+  '/api/download': typeof ApiDownloadRoute
   '/media/$id': typeof MediaIdRoute
+  '/order/$number': typeof OrderNumberRoute
   '/product/$slug': typeof ProductSlugRoute
   '/products/$category': typeof ProductsCategoryRoute
   '/api/admin/upload': typeof ApiAdminUploadRoute
+  '/api/razorpay/webhook': typeof ApiRazorpayWebhookRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -184,6 +224,8 @@ export interface FileRoutesById {
   '/blog': typeof BlogRoute
   '/bodybuilding-prep': typeof BodybuildingPrepRoute
   '/book-appointment': typeof BookAppointmentRoute
+  '/cart': typeof CartRoute
+  '/checkout': typeof CheckoutRoute
   '/contact': typeof ContactRoute
   '/mens-coaching': typeof MensCoachingRoute
   '/pcos-nutrition': typeof PcosNutritionRoute
@@ -193,10 +235,13 @@ export interface FileRoutesById {
   '/sports-nutrition': typeof SportsNutritionRoute
   '/stories': typeof StoriesRoute
   '/womens-wellness': typeof WomensWellnessRoute
+  '/api/download': typeof ApiDownloadRoute
   '/media/$id': typeof MediaIdRoute
+  '/order/$number': typeof OrderNumberRoute
   '/product/$slug': typeof ProductSlugRoute
   '/products/$category': typeof ProductsCategoryRoute
   '/api/admin/upload': typeof ApiAdminUploadRoute
+  '/api/razorpay/webhook': typeof ApiRazorpayWebhookRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -208,6 +253,8 @@ export interface FileRouteTypes {
     | '/blog'
     | '/bodybuilding-prep'
     | '/book-appointment'
+    | '/cart'
+    | '/checkout'
     | '/contact'
     | '/mens-coaching'
     | '/pcos-nutrition'
@@ -217,10 +264,13 @@ export interface FileRouteTypes {
     | '/sports-nutrition'
     | '/stories'
     | '/womens-wellness'
+    | '/api/download'
     | '/media/$id'
+    | '/order/$number'
     | '/product/$slug'
     | '/products/$category'
     | '/api/admin/upload'
+    | '/api/razorpay/webhook'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -230,6 +280,8 @@ export interface FileRouteTypes {
     | '/blog'
     | '/bodybuilding-prep'
     | '/book-appointment'
+    | '/cart'
+    | '/checkout'
     | '/contact'
     | '/mens-coaching'
     | '/pcos-nutrition'
@@ -239,10 +291,13 @@ export interface FileRouteTypes {
     | '/sports-nutrition'
     | '/stories'
     | '/womens-wellness'
+    | '/api/download'
     | '/media/$id'
+    | '/order/$number'
     | '/product/$slug'
     | '/products/$category'
     | '/api/admin/upload'
+    | '/api/razorpay/webhook'
   id:
     | '__root__'
     | '/'
@@ -252,6 +307,8 @@ export interface FileRouteTypes {
     | '/blog'
     | '/bodybuilding-prep'
     | '/book-appointment'
+    | '/cart'
+    | '/checkout'
     | '/contact'
     | '/mens-coaching'
     | '/pcos-nutrition'
@@ -261,10 +318,13 @@ export interface FileRouteTypes {
     | '/sports-nutrition'
     | '/stories'
     | '/womens-wellness'
+    | '/api/download'
     | '/media/$id'
+    | '/order/$number'
     | '/product/$slug'
     | '/products/$category'
     | '/api/admin/upload'
+    | '/api/razorpay/webhook'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -275,6 +335,8 @@ export interface RootRouteChildren {
   BlogRoute: typeof BlogRoute
   BodybuildingPrepRoute: typeof BodybuildingPrepRoute
   BookAppointmentRoute: typeof BookAppointmentRoute
+  CartRoute: typeof CartRoute
+  CheckoutRoute: typeof CheckoutRoute
   ContactRoute: typeof ContactRoute
   MensCoachingRoute: typeof MensCoachingRoute
   PcosNutritionRoute: typeof PcosNutritionRoute
@@ -284,10 +346,13 @@ export interface RootRouteChildren {
   SportsNutritionRoute: typeof SportsNutritionRoute
   StoriesRoute: typeof StoriesRoute
   WomensWellnessRoute: typeof WomensWellnessRoute
+  ApiDownloadRoute: typeof ApiDownloadRoute
   MediaIdRoute: typeof MediaIdRoute
+  OrderNumberRoute: typeof OrderNumberRoute
   ProductSlugRoute: typeof ProductSlugRoute
   ProductsCategoryRoute: typeof ProductsCategoryRoute
   ApiAdminUploadRoute: typeof ApiAdminUploadRoute
+  ApiRazorpayWebhookRoute: typeof ApiRazorpayWebhookRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -339,6 +404,20 @@ declare module '@tanstack/react-router' {
       path: '/book-appointment'
       fullPath: '/book-appointment'
       preLoaderRoute: typeof BookAppointmentRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/cart': {
+      id: '/cart'
+      path: '/cart'
+      fullPath: '/cart'
+      preLoaderRoute: typeof CartRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/checkout': {
+      id: '/checkout'
+      path: '/checkout'
+      fullPath: '/checkout'
+      preLoaderRoute: typeof CheckoutRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/contact': {
@@ -404,11 +483,25 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WomensWellnessRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/download': {
+      id: '/api/download'
+      path: '/api/download'
+      fullPath: '/api/download'
+      preLoaderRoute: typeof ApiDownloadRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/media/$id': {
       id: '/media/$id'
       path: '/media/$id'
       fullPath: '/media/$id'
       preLoaderRoute: typeof MediaIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/order/$number': {
+      id: '/order/$number'
+      path: '/order/$number'
+      fullPath: '/order/$number'
+      preLoaderRoute: typeof OrderNumberRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/product/$slug': {
@@ -432,6 +525,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ApiAdminUploadRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/api/razorpay/webhook': {
+      id: '/api/razorpay/webhook'
+      path: '/api/razorpay/webhook'
+      fullPath: '/api/razorpay/webhook'
+      preLoaderRoute: typeof ApiRazorpayWebhookRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -443,6 +543,8 @@ const rootRouteChildren: RootRouteChildren = {
   BlogRoute: BlogRoute,
   BodybuildingPrepRoute: BodybuildingPrepRoute,
   BookAppointmentRoute: BookAppointmentRoute,
+  CartRoute: CartRoute,
+  CheckoutRoute: CheckoutRoute,
   ContactRoute: ContactRoute,
   MensCoachingRoute: MensCoachingRoute,
   PcosNutritionRoute: PcosNutritionRoute,
@@ -452,10 +554,13 @@ const rootRouteChildren: RootRouteChildren = {
   SportsNutritionRoute: SportsNutritionRoute,
   StoriesRoute: StoriesRoute,
   WomensWellnessRoute: WomensWellnessRoute,
+  ApiDownloadRoute: ApiDownloadRoute,
   MediaIdRoute: MediaIdRoute,
+  OrderNumberRoute: OrderNumberRoute,
   ProductSlugRoute: ProductSlugRoute,
   ProductsCategoryRoute: ProductsCategoryRoute,
   ApiAdminUploadRoute: ApiAdminUploadRoute,
+  ApiRazorpayWebhookRoute: ApiRazorpayWebhookRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

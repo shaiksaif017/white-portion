@@ -48,6 +48,11 @@ export function smtpBaseConfig() {
   return { host, port, user, from: read("MAIL_FROM") ?? user, envPass: read("SMTP_PASS") };
 }
 
+// Public address used in links inside emails (order pages, downloads).
+export function siteUrl(): string {
+  return (read("SITE_URL") ?? "https://officialwhiteportion.com").replace(/\/+$/, "");
+}
+
 export function isProduction() {
   return process.env["NODE_ENV"] === "production";
 }

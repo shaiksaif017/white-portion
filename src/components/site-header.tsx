@@ -1,8 +1,9 @@
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { ArrowUpRight, Menu, X, ChevronDown } from "lucide-react";
+import { ArrowUpRight, Menu, X, ChevronDown, ShoppingBag } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Wordmark } from "@/components/wordmark";
+import { useCartCount } from "@/lib/cart";
 
 type SiteHeaderProps = {
   isSolid?: boolean;
@@ -11,6 +12,7 @@ type SiteHeaderProps = {
 export function SiteHeader({ isSolid = false }: SiteHeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
   const [servicesDropdown, setServicesDropdown] = useState(false);
+  const cartCount = useCartCount();
 
   function closeMenu() {
     setMenuOpen(false);
@@ -61,6 +63,14 @@ export function SiteHeader({ isSolid = false }: SiteHeaderProps) {
         </Link>
       </nav>
 
+      <div className="header-actions">
+      {cartCount > 0 && (
+        <Link to="/cart" className="header-cart" aria-label={`Cart, ${cartCount} item${cartCount === 1 ? "" : "s"}`}>
+          <ShoppingBag aria-hidden="true" />
+          <span className="header-cart-count">{cartCount > 99 ? "99+" : cartCount}</span>
+        </Link>
+      )}
+
       <Button asChild className="header-cta !bg-primary hover:!bg-olive-deep text-paper font-bold tracking-wider">
         <Link to="/book-appointment">
           BOOK AN APPOINTMENT <ArrowUpRight aria-hidden="true" />
@@ -77,6 +87,7 @@ export function SiteHeader({ isSolid = false }: SiteHeaderProps) {
       >
         {menuOpen ? <X /> : <Menu />}
       </Button>
+      </div>
     </header>
   );
 }

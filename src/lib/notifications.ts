@@ -9,7 +9,10 @@ export type NotificationType =
   | "ADMIN_ALERT"
   | "APPOINTMENT_CONFIRMED"
   | "APPOINTMENT_CANCELLED"
-  | "TEST_EMAIL";
+  | "TEST_EMAIL"
+  | "ORDER_CONFIRMATION"
+  | "ORDER_ADMIN_ALERT"
+  | "ORDER_SHIPPED";
 
 export interface NotificationLog {
   id: string;
