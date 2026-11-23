@@ -44,6 +44,7 @@ export function SiteFooter() {
             <li><Link to="/approach">The 4-Stage Methodology</Link></li>
             <li><Link to="/stories">Client Transformations</Link></li>
             <li><Link to="/services-products">Services & Products</Link></li>
+            <li><Link to="/products">Shop Products</Link></li>
           </ul>
         </div>
 

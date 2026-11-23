@@ -31,6 +31,7 @@ import { Route as ApiDownloadRouteImport } from './routes/api.download'
 import { Route as MediaIdRouteImport } from './routes/media.$id'
 import { Route as OrderNumberRouteImport } from './routes/order.$number'
 import { Route as ProductSlugRouteImport } from './routes/product.$slug'
+import { Route as ProductsIndexRouteImport } from './routes/products.index'
 import { Route as ProductsCategoryRouteImport } from './routes/products.$category'
 import { Route as ApiAdminUploadRouteImport } from './routes/api.admin.upload'
 import { Route as ApiRazorpayWebhookRouteImport } from './routes/api.razorpay.webhook'
@@ -145,6 +146,11 @@ const ProductSlugRoute = ProductSlugRouteImport.update({
   path: '/product/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ProductsIndexRoute = ProductsIndexRouteImport.update({
+  id: '/products/',
+  path: '/products/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ProductsCategoryRoute = ProductsCategoryRouteImport.update({
   id: '/products/$category',
   path: '/products/$category',
@@ -185,6 +191,7 @@ export interface FileRoutesByFullPath {
   '/order/$number': typeof OrderNumberRoute
   '/product/$slug': typeof ProductSlugRoute
   '/products/$category': typeof ProductsCategoryRoute
+  '/products/': typeof ProductsIndexRoute
   '/api/admin/upload': typeof ApiAdminUploadRoute
   '/api/razorpay/webhook': typeof ApiRazorpayWebhookRoute
 }
@@ -212,6 +219,7 @@ export interface FileRoutesByTo {
   '/order/$number': typeof OrderNumberRoute
   '/product/$slug': typeof ProductSlugRoute
   '/products/$category': typeof ProductsCategoryRoute
+  '/products': typeof ProductsIndexRoute
   '/api/admin/upload': typeof ApiAdminUploadRoute
   '/api/razorpay/webhook': typeof ApiRazorpayWebhookRoute
 }
@@ -240,6 +248,7 @@ export interface FileRoutesById {
   '/order/$number': typeof OrderNumberRoute
   '/product/$slug': typeof ProductSlugRoute
   '/products/$category': typeof ProductsCategoryRoute
+  '/products/': typeof ProductsIndexRoute
   '/api/admin/upload': typeof ApiAdminUploadRoute
   '/api/razorpay/webhook': typeof ApiRazorpayWebhookRoute
 }
@@ -269,6 +278,7 @@ export interface FileRouteTypes {
     | '/order/$number'
     | '/product/$slug'
     | '/products/$category'
+    | '/products/'
     | '/api/admin/upload'
     | '/api/razorpay/webhook'
   fileRoutesByTo: FileRoutesByTo
@@ -296,6 +306,7 @@ export interface FileRouteTypes {
     | '/order/$number'
     | '/product/$slug'
     | '/products/$category'
+    | '/products'
     | '/api/admin/upload'
     | '/api/razorpay/webhook'
   id:
@@ -323,6 +334,7 @@ export interface FileRouteTypes {
     | '/order/$number'
     | '/product/$slug'
     | '/products/$category'
+    | '/products/'
     | '/api/admin/upload'
     | '/api/razorpay/webhook'
   fileRoutesById: FileRoutesById
@@ -351,6 +363,7 @@ export interface RootRouteChildren {
   OrderNumberRoute: typeof OrderNumberRoute
   ProductSlugRoute: typeof ProductSlugRoute
   ProductsCategoryRoute: typeof ProductsCategoryRoute
+  ProductsIndexRoute: typeof ProductsIndexRoute
   ApiAdminUploadRoute: typeof ApiAdminUploadRoute
   ApiRazorpayWebhookRoute: typeof ApiRazorpayWebhookRoute
 }
@@ -511,6 +524,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProductSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/products/': {
+      id: '/products/'
+      path: '/products'
+      fullPath: '/products/'
+      preLoaderRoute: typeof ProductsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/products/$category': {
       id: '/products/$category'
       path: '/products/$category'
@@ -559,6 +579,7 @@ const rootRouteChildren: RootRouteChildren = {
   OrderNumberRoute: OrderNumberRoute,
   ProductSlugRoute: ProductSlugRoute,
   ProductsCategoryRoute: ProductsCategoryRoute,
+  ProductsIndexRoute: ProductsIndexRoute,
   ApiAdminUploadRoute: ApiAdminUploadRoute,
   ApiRazorpayWebhookRoute: ApiRazorpayWebhookRoute,
 }

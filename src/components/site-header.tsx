@@ -4,10 +4,17 @@ import { ArrowUpRight, Menu, X, ChevronDown, ShoppingBag } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Wordmark } from "@/components/wordmark";
 import { useCartCount } from "@/lib/cart";
+import { SERVICES } from "@/lib/services-data";
+import { DEFAULT_CATEGORIES } from "@/lib/shop-types";
 
 type SiteHeaderProps = {
   isSolid?: boolean;
 };
+
+// Matches the CSS breakpoint where the menu becomes the phone menu (max-width: 640px).
+function isDesktopNav() {
+  return window.matchMedia("(min-width: 641px)").matches;
+}
 
 export function SiteHeader({ isSolid = false }: SiteHeaderProps) {
   const [menuOpen, setMenuOpen] = useState(false);
@@ -30,23 +37,60 @@ export function SiteHeader({ isSolid = false }: SiteHeaderProps) {
         <Link to="/about" onClick={closeMenu} activeProps={{ className: "nav-active" }}>
           About Us
         </Link>
-        <div 
-          className="nav-dropdown-wrap"
-          onMouseEnter={() => setServicesDropdown(true)}
-          onMouseLeave={() => setServicesDropdown(false)}
+        <div
+          className={`nav-dropdown-wrap${servicesDropdown ? " is-open" : ""}`}
+          // Hover opens it on desktop; in the phone menu only the arrow button toggles it.
+          onPointerEnter={(e) => e.pointerType === "mouse" && isDesktopNav() && setServicesDropdown(true)}
+          onPointerLeave={(e) => e.pointerType === "mouse" && isDesktopNav() && setServicesDropdown(false)}
         >
-          <Link to="/services" onClick={closeMenu} className="dropdown-trigger" activeProps={{ className: "nav-active" }}>
-            <span>Coaching & Services</span>
-            <ChevronDown className="dropdown-chevron" aria-hidden="true" />
-          </Link>
-          <div className={`nav-dropdown-menu ${servicesDropdown ? "is-visible" : ""}`}>
-            <Link to="/services" onClick={closeMenu}>All Services Overview</Link>
-            <Link to="/mens-coaching" onClick={closeMenu}>Men's Coaching & Hypertrophy</Link>
-            <Link to="/womens-wellness" onClick={closeMenu}>Women's Wellness & Lifestyle</Link>
-            <Link to="/pcos-nutrition" onClick={closeMenu}>PCOS / PCOD Clinical Nutrition</Link>
-            <Link to="/bodybuilding-prep" onClick={closeMenu}>Bodybuilding & Contest Prep</Link>
-            <Link to="/personalised-diet" onClick={closeMenu}>Personalised Diet Planning</Link>
-            <Link to="/sports-nutrition" onClick={closeMenu}>Sports Performance Nutrition</Link>
+          <div className="dropdown-trigger-row">
+            <Link
+              to="/services-products"
+              onClick={closeMenu}
+              className="dropdown-trigger"
+              activeProps={{ className: "nav-active" }}
+            >
+              <span>Services & Products</span>
+            </Link>
+            <button
+              type="button"
+              className="dropdown-toggle"
+              aria-label="Show Services & Products pages"
+              aria-expanded={servicesDropdown}
+              onClick={() => setServicesDropdown((v) => !v)}
+            >
+              <ChevronDown className="dropdown-chevron" aria-hidden="true" />
+            </button>
+          </div>
+          <div className={`nav-dropdown-menu nav-mega ${servicesDropdown ? "is-visible" : ""}`}>
+            <div className="nav-mega-group">
+              <Link to="/services" onClick={closeMenu} className="nav-mega-title">
+                Coaching Services
+              </Link>
+              {SERVICES.map((s) => (
+                <Link key={s.slug} to={s.slug} onClick={closeMenu}>
+                  {s.title}
+                </Link>
+              ))}
+            </div>
+            <div className="nav-mega-group">
+              <Link to="/products" onClick={closeMenu} className="nav-mega-title">
+                Products
+              </Link>
+              {DEFAULT_CATEGORIES.map((c) => (
+                <Link
+                  key={c.slug}
+                  to="/products/$category"
+                  params={{ category: c.slug }}
+                  onClick={closeMenu}
+                >
+                  {c.name}
+                </Link>
+              ))}
+              <Link to="/services-products" onClick={closeMenu} className="nav-mega-all">
+                View all Services & Products →
+              </Link>
+            </div>
           </div>
         </div>
         <Link to="/approach" onClick={closeMenu} activeProps={{ className: "nav-active" }}>
@@ -54,9 +98,6 @@ export function SiteHeader({ isSolid = false }: SiteHeaderProps) {
         </Link>
         <Link to="/stories" onClick={closeMenu} activeProps={{ className: "nav-active" }}>
           Client Stories
-        </Link>
-        <Link to="/services-products" onClick={closeMenu} activeProps={{ className: "nav-active" }}>
-          Services & Products
         </Link>
         <Link to="/book-appointment" onClick={closeMenu} className="font-bold text-gold-accent" activeProps={{ className: "nav-active" }}>
           BOOK AN APPOINTMENT
