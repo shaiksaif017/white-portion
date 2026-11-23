@@ -51,6 +51,8 @@ import { type NotificationLog, customerWhatsAppConfirmationUrl } from "@/lib/not
 import { brand } from "@/lib/brand";
 import { AdminProducts } from "@/components/admin-products";
 import { AdminOrders } from "@/components/admin-orders";
+import { AdminWhatsApp } from "@/components/admin-whatsapp";
+import type { StatusNotifications } from "@/lib/booking-api";
 import { WHATSAPP_DISPLAY } from "@/lib/whatsapp";
 
 export const Route = createFileRoute("/admin")({
@@ -71,6 +73,11 @@ function AdminPage() {
   const [authError, setAuthError] = useState("");
   const [isLoggingIn, setIsLoggingIn] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  // How the automatic email + WhatsApp went after the last Confirm / Cancel.
+  const [notifyResult, setNotifyResult] = useState<{
+    record: AppointmentRecord;
+    notified: StatusNotifications;
+  } | null>(null);
 
   const [appointments, setAppointments] = useState<AppointmentRecord[]>([]);
   const [settings, setSettings] = useState<BookingSettings>(defaultBookingSettings);
@@ -157,6 +164,8 @@ function AdminPage() {
     try {
       const res = await adminUpdateStatus({ data: { id: recordId, status: newStatus } });
       if (!res.ok) return handleFailure(res.error);
+      setActionError(null);
+      setNotifyResult(res.notified ? { record: res.appointment, notified: res.notified } : null);
       if (newStatus === "Confirmed" || (selectedRecord && selectedRecord.id === recordId)) {
         setSelectedRecord(res.appointment);
       }
@@ -496,6 +505,17 @@ function AdminPage() {
             {actionError}
           </div>
         )}
+        {notifyResult && (
+          <NotifyBanner
+            result={notifyResult}
+            manualUrl={
+              notifyResult.record.booking_status === "Confirmed"
+                ? customerWhatsAppConfirmationUrl(notifyResult.record, settings)
+                : null
+            }
+            onClose={() => setNotifyResult(null)}
+          />
+        )}
 
         {activeTab === "bookings" && (
           <div className="space-y-6">
@@ -636,7 +656,7 @@ function AdminPage() {
                                       target="_blank"
                                       rel="noopener noreferrer"
                                       className="px-2 py-1 bg-[#25D366] text-white rounded text-[11px] font-semibold hover:opacity-90"
-                                      title="Send WhatsApp confirmation to the customer"
+                                      title="Send the WhatsApp confirmation manually (opens WhatsApp)"
                                     >
                                       WhatsApp
                                     </a>
@@ -936,6 +956,7 @@ function AdminPage() {
                   {testEmailResult}
                 </pre>
               )}
+              <AdminWhatsApp onSessionExpired={handleFailure} />
             </div>
 
             <div className="space-y-3 mt-6">
@@ -1089,12 +1110,16 @@ function AdminPage() {
             {selectedRecord.booking_status === "Confirmed" && (
               <div className="p-4 rounded border border-[#25D366]/40 bg-[#25D366]/10 space-y-3 text-xs">
                 <p className="font-semibold text-charcoal">
-                  ✅ Confirmed. A confirmation email is sent to {selectedRecord.email} automatically.
+                  ✅ Confirmed. The confirmation email (and WhatsApp, if automatic WhatsApp is
+                  switched on) is sent automatically when you confirm.
                 </p>
+                {notifyResult?.record.id === selectedRecord.id && (
+                  <NotifyBanner result={notifyResult} manualUrl={null} />
+                )}
                 {customerWhatsAppConfirmationUrl(selectedRecord, settings) ? (
                   <>
                     <p className="text-muted-foreground">
-                      Also let the client know on WhatsApp: the message is pre-written, just tap Send.
+                      Need to send WhatsApp yourself (for example if the automatic message failed)? The message is pre-written, just tap Send.
                     </p>
                     <a
                       href={customerWhatsAppConfirmationUrl(selectedRecord, settings) ?? undefined}
@@ -1102,7 +1127,7 @@ function AdminPage() {
                       rel="noopener noreferrer"
                       className="inline-flex items-center gap-2 px-4 py-2 rounded bg-[#25D366] text-white font-semibold hover:opacity-90"
                     >
-                      Send WhatsApp confirmation to {selectedRecord.full_name.split(" ")[0]}
+                      Send WhatsApp manually to {selectedRecord.full_name.split(" ")[0]}
                     </a>
                   </>
                 ) : (
@@ -1149,5 +1174,62 @@ function AdminPage() {
 
       <SiteFooter />
     </main>
+  );
+}
+
+const NOTIFY_LABEL = { SENT: "sent ✓", FAILED: "failed", SKIPPED: "not sent" } as const;
+
+function NotifyBanner({
+  result,
+  manualUrl,
+  onClose,
+}: {
+  result: { record: AppointmentRecord; notified: StatusNotifications };
+  manualUrl: string | null;
+  onClose?: () => void;
+}) {
+  const { record, notified } = result;
+  const allSent = notified.email.status === "SENT" && notified.whatsapp.status === "SENT";
+  const whatsappOff = notified.whatsapp.status === "SKIPPED";
+  return (
+    <div
+      role="status"
+      className={`mb-6 p-3 rounded border text-xs text-charcoal space-y-1 ${
+        allSent ? "border-primary/40 bg-primary/10" : "border-amber-500/40 bg-amber-500/10"
+      }`}
+    >
+      <div className="flex justify-between gap-3">
+        <p className="font-semibold">
+          {record.booking_status} {record.booking_reference} ({record.full_name}): Email{" "}
+          {NOTIFY_LABEL[notified.email.status]} · WhatsApp {NOTIFY_LABEL[notified.whatsapp.status]}
+        </p>
+        {onClose && (
+          <button type="button" onClick={onClose} aria-label="Dismiss" className="cursor-pointer">
+            <X className="w-3.5 h-3.5" />
+          </button>
+        )}
+      </div>
+      {notified.email.status !== "SENT" && notified.email.error && (
+        <p>Email: {notified.email.error}</p>
+      )}
+      {notified.whatsapp.status === "FAILED" && notified.whatsapp.error && (
+        <p>WhatsApp: {notified.whatsapp.error}</p>
+      )}
+      {whatsappOff && (
+        <p className="text-muted-foreground">
+          Automatic WhatsApp is off. Set it up under Email Notification Log → Automatic WhatsApp.
+        </p>
+      )}
+      {notified.whatsapp.status !== "SENT" && manualUrl && (
+        <a
+          href={manualUrl}
+          target="_blank"
+          rel="noopener noreferrer"
+          className="inline-block mt-1 px-3 py-1.5 rounded bg-[#25D366] text-white font-semibold hover:opacity-90"
+        >
+          Send WhatsApp manually
+        </a>
+      )}
+    </div>
   );
 }

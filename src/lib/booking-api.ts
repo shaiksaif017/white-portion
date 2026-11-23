@@ -34,6 +34,14 @@ import * as bookings from "@/server/bookings";
 import { isDbConfigured } from "@/server/db";
 import { authConfig, isProduction } from "@/server/env";
 import { resolveSmtp, saveSmtpPassword, sendEmail, sendEmails, smtpSummary } from "@/server/mailer";
+import { toWhatsAppDigits } from "@/lib/notifications";
+import {
+  CANCEL_TEMPLATE_TEXT,
+  CONFIRM_TEMPLATE_TEXT,
+  cancelParams,
+  confirmParams,
+} from "@/lib/whatsapp-templates";
+import { sendAppointmentWhatsApp } from "@/server/whatsapp-cloud";
 
 const UNAVAILABLE = "Online booking is temporarily unavailable. Please contact us on WhatsApp.";
 
@@ -193,26 +201,48 @@ export const adminUpdateStatus = createServerFn({ method: "POST" })
       })
       .parse(d),
   )
-  .handler(async ({ data }): Promise<{ ok: true; appointment: AppointmentRecord } | Fail> => {
+  .handler(
+    async ({
+      data,
+    }): Promise<
+      { ok: true; appointment: AppointmentRecord; notified: StatusNotifications | null } | Fail
+    > => {
     if (!isAdmin()) return unauthorized;
     try {
       const result = await bookings.updateAppointmentStatus(data.id, data.status);
       if (!result.ok) return result;
       const { appointment, previousStatus } = result;
-      if (previousStatus !== appointment.booking_status) {
+      let notified: StatusNotifications | null = null;
+      const status = appointment.booking_status;
+      if (previousStatus !== status && (status === "Confirmed" || status === "Cancelled")) {
+        // Email and WhatsApp go out together; the admin sees how each one went.
         const settings = await bookings.getSettings();
-        if (appointment.booking_status === "Confirmed") {
-          void sendEmails([{ message: buildConfirmation(appointment, settings) }]);
-        } else if (appointment.booking_status === "Cancelled") {
-          void sendEmails([{ message: buildCancellation(appointment, settings) }]);
-        }
+        const confirm = status === "Confirmed";
+        const to = toWhatsAppDigits(appointment.whatsapp_number) ?? toWhatsAppDigits(appointment.phone);
+        const [email, whatsapp] = await Promise.all([
+          sendEmail(confirm ? buildConfirmation(appointment, settings) : buildCancellation(appointment, settings)),
+          sendAppointmentWhatsApp({
+            type: confirm ? "WHATSAPP_CONFIRMATION" : "WHATSAPP_CANCELLATION",
+            to,
+            which: confirm ? "confirm" : "cancel",
+            params: confirm ? confirmParams(appointment, settings) : cancelParams(appointment),
+            templateText: confirm ? CONFIRM_TEMPLATE_TEXT : CANCEL_TEMPLATE_TEXT,
+          }),
+        ]);
+        notified = { email, whatsapp };
       }
-      return { ok: true, appointment };
+      return { ok: true, appointment, notified };
     } catch (error) {
       console.error("[admin] status update failed", error);
       return { ok: false, error: "Could not update the booking." };
     }
-  });
+  },
+  );
+
+export interface StatusNotifications {
+  email: { status: "SENT" | "FAILED" | "SKIPPED"; error?: string | undefined };
+  whatsapp: { status: "SENT" | "FAILED" | "SKIPPED"; error?: string | undefined };
+}
 
 export const adminSaveSettings = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => d)

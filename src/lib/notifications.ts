@@ -12,7 +12,10 @@ export type NotificationType =
   | "TEST_EMAIL"
   | "ORDER_CONFIRMATION"
   | "ORDER_ADMIN_ALERT"
-  | "ORDER_SHIPPED";
+  | "ORDER_SHIPPED"
+  | "WHATSAPP_CONFIRMATION"
+  | "WHATSAPP_CANCELLATION"
+  | "WHATSAPP_TEST";
 
 export interface NotificationLog {
   id: string;
