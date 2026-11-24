@@ -8,7 +8,7 @@ import { SiteHeader } from "@/components/site-header";
 import { brand } from "@/lib/brand";
 import { cart } from "@/lib/cart";
 import { getShopStatus } from "@/lib/order-api";
-import { MAX_QTY } from "@/lib/order-types";
+import { lineKey, MAX_QTY } from "@/lib/order-types";
 import { formatINR, KIND_LABEL } from "@/lib/shop-types";
 
 export const Route = createFileRoute("/cart")({
@@ -57,11 +57,12 @@ function CartPage() {
         ) : (
           <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
             <ul className="lg:col-span-2 page-card !p-0 divide-y divide-border">
-              {rows.map(({ product: p, qty, problem }) => {
+              {rows.map(({ item: p, qty, problem }) => {
                 const digital = p.kind === "ebook" || p.kind === "course";
                 const max = Math.min(MAX_QTY, p.stock ?? MAX_QTY);
+                const ref = { productId: p.productId, variantId: p.variantId };
                 return (
-                  <li key={p.id} className="p-5 flex gap-4">
+                  <li key={lineKey(p)} className="p-5 flex gap-4">
                     <Link
                       to="/product/$slug"
                       params={{ slug: p.slug }}
@@ -79,8 +80,12 @@ function CartPage() {
                           >
                             {p.name}
                           </Link>
+                          {p.variantName && (
+                            <p className="text-xs text-charcoal">{p.variantName}</p>
+                          )}
                           <p className="text-[11px] text-muted-foreground">
                             {KIND_LABEL[p.kind]} · {formatINR(p.pricePaise)} each
+                            {p.sku ? ` · SKU ${p.sku}` : ""}
                           </p>
                         </div>
                         <span className="font-semibold text-charcoal whitespace-nowrap">
@@ -93,7 +98,7 @@ function CartPage() {
                             <button
                               type="button"
                               aria-label={`Decrease quantity of ${p.name}`}
-                              onClick={() => cart.setQty(p.id, qty - 1)}
+                              onClick={() => cart.setQty(ref, qty - 1)}
                               className="p-2 hover:text-primary"
                             >
                               <Minus className="w-3 h-3" aria-hidden="true" />
@@ -102,7 +107,7 @@ function CartPage() {
                             <button
                               type="button"
                               aria-label={`Increase quantity of ${p.name}`}
-                              onClick={() => cart.setQty(p.id, qty + 1)}
+                              onClick={() => cart.setQty(ref, qty + 1)}
                               disabled={qty >= max}
                               className="p-2 hover:text-primary disabled:opacity-40"
                             >
@@ -112,7 +117,7 @@ function CartPage() {
                         )}
                         <button
                           type="button"
-                          onClick={() => cart.remove(p.id)}
+                          onClick={() => cart.remove(ref)}
                           className="text-[11px] text-muted-foreground hover:text-destructive inline-flex items-center gap-1"
                         >
                           <Trash2 className="w-3 h-3" aria-hidden="true" /> Remove

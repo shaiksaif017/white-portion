@@ -1,16 +1,32 @@
-import { createFileRoute, Link } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { ArrowUpRight } from "lucide-react";
 
 import { ProductCategoriesGrid } from "@/components/product-categories-grid";
-import { TrustRow } from "@/components/shop-ui";
+import {
+  hasActiveFilters,
+  ProductFilters,
+  productSearchSchema,
+  toProductQuery,
+} from "@/components/product-filters";
+import { ProductCard, TrustRow } from "@/components/shop-ui";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { Button } from "@/components/ui/button";
 import { brand } from "@/lib/brand";
-import { getShopCategories } from "@/lib/shop-api";
+import { getFeaturedProducts, getShopCategories, searchProducts } from "@/lib/shop-api";
 
 export const Route = createFileRoute("/products/")({
-  loader: () => getShopCategories(),
+  validateSearch: productSearchSchema,
+  loaderDeps: ({ search }) => search,
+  loader: async ({ deps }) => {
+    const searching = hasActiveFilters(deps) || Boolean(deps.sort);
+    const [{ categories }, { products: featured }, results] = await Promise.all([
+      getShopCategories(),
+      getFeaturedProducts(),
+      searching ? searchProducts({ data: toProductQuery(deps) }) : Promise.resolve(null),
+    ]);
+    return { categories, featured, results: results?.products ?? null };
+  },
   head: () => ({
     meta: [
       { title: `Products | ${brand.name}` },
@@ -26,7 +42,9 @@ export const Route = createFileRoute("/products/")({
 });
 
 function ProductsPage() {
-  const { categories } = Route.useLoaderData();
+  const { categories, featured, results } = Route.useLoaderData();
+  const search = Route.useSearch();
+  const navigate = useNavigate({ from: Route.fullPath });
 
   return (
     <main>
@@ -45,6 +63,44 @@ function ProductsPage() {
             essentials, chosen by our coaching team.
           </p>
         </div>
+      </section>
+
+      <section className="page-section section-wrap bg-cream !pb-6">
+        <h2 className="text-3xl md:text-4xl font-display font-medium text-charcoal mb-6">
+          Search all products
+        </h2>
+        <ProductFilters
+          value={search}
+          resultCount={results?.length ?? 0}
+          onChange={(next) => void navigate({ search: next, replace: true, resetScroll: false })}
+        />
+        {results && (
+          <div className="pb-10">
+            {results.length > 0 ? (
+              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+                {results.map((p) => (
+                  <ProductCard key={p.id} product={p} />
+                ))}
+              </div>
+            ) : (
+              <p className="text-sm text-muted-foreground" role="status">
+                No products match your search. Try another word, or browse the categories below.
+              </p>
+            )}
+          </div>
+        )}
+        {!results && featured.length > 0 && (
+          <div className="pb-10">
+            <h3 className="text-xs font-bold tracking-widest text-primary uppercase mb-5">
+              Featured
+            </h3>
+            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
+              {featured.map((p) => (
+                <ProductCard key={p.id} product={p} />
+              ))}
+            </div>
+          </div>
+        )}
       </section>
 
       <section className="page-section section-wrap bg-secondary">

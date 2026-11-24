@@ -99,6 +99,12 @@ function OrderPage() {
                     <div>
                       <p className="font-display text-lg text-charcoal leading-tight">
                         {i.qty} × {i.name}
+                        {i.variantName && (
+                          <span className="text-base text-muted-foreground">
+                            {" "}
+                            ({i.variantName})
+                          </span>
+                        )}
                       </p>
                       <p className="text-[11px] text-muted-foreground">{KIND_LABEL[i.kind]}</p>
                       {order.paymentStatus === "paid" && i.kind === "course" && (
@@ -141,6 +147,12 @@ function OrderPage() {
                     <Row k="Order status" v={FULFILMENT_LABEL[order.fulfilmentStatus]} />
                   )}
                   <Row k="Subtotal" v={formatINR(order.subtotalPaise)} />
+                  {order.discountPaise > 0 && (
+                    <Row
+                      k={`Discount${order.couponCode ? ` (${order.couponCode})` : ""}`}
+                      v={`−${formatINR(order.discountPaise)}`}
+                    />
+                  )}
                   {order.address && (
                     <Row
                       k="Shipping"
@@ -149,6 +161,11 @@ function OrderPage() {
                   )}
                   <Row k="Total" v={formatINR(order.totalPaise)} bold />
                 </dl>
+                {order.taxPaise > 0 && (
+                  <p className="mt-2 text-[11px] text-muted-foreground">
+                    Includes GST of {formatINR(order.taxPaise)}.
+                  </p>
+                )}
               </div>
               {order.trackingInfo && (
                 <div>

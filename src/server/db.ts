@@ -168,7 +168,88 @@ const SCHEMA: string[] = [
     data TEXT NOT NULL,
     updated_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+  `CREATE TABLE IF NOT EXISTS product_variants (
+    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    product_id INT NOT NULL,
+    name VARCHAR(120) NOT NULL,
+    sku VARCHAR(64) NULL,
+    price_paise INT NOT NULL,
+    compare_at_paise INT NULL,
+    stock INT NULL,
+    sort_order INT NOT NULL DEFAULT 0,
+    UNIQUE KEY uniq_variant_sku (sku),
+    KEY idx_variant_product (product_id)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+  `CREATE TABLE IF NOT EXISTS coupons (
+    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    code VARCHAR(40) NOT NULL,
+    description VARCHAR(200) NOT NULL DEFAULT '',
+    discount_type VARCHAR(8) NOT NULL,
+    discount_value INT NOT NULL,
+    min_order_paise INT NOT NULL DEFAULT 0,
+    max_discount_paise INT NULL,
+    starts_at DATETIME NULL,
+    ends_at DATETIME NULL,
+    max_uses INT NULL,
+    used_count INT NOT NULL DEFAULT 0,
+    active TINYINT NOT NULL DEFAULT 1,
+    is_sample TINYINT NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_coupon_code (code)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
 ];
+
+// Columns added after the first release. Each is added only if it is missing, so
+// this upgrades existing live databases (MySQL or MariaDB) and fresh ones alike.
+const COLUMNS: [table: string, column: string, definition: string][] = [
+  ["products", "sku", "VARCHAR(64) NULL"],
+  ["products", "is_featured", "TINYINT NOT NULL DEFAULT 0"],
+  ["products", "gst_rate_bps", "INT NOT NULL DEFAULT 1800"], // basis points: 1800 = 18%
+  ["products", "preview_file_id", "INT NULL"],
+  ["products", "is_sample", "TINYINT NOT NULL DEFAULT 0"],
+  ["orders", "discount_paise", "INT NOT NULL DEFAULT 0"],
+  ["orders", "coupon_code", "VARCHAR(40) NULL"],
+  ["orders", "tax_paise", "INT NOT NULL DEFAULT 0"],
+  ["orders", "is_sample", "TINYINT NOT NULL DEFAULT 0"],
+  ["order_items", "variant_id", "INT NULL"],
+  ["order_items", "variant_name", "VARCHAR(120) NULL"],
+  ["order_items", "sku", "VARCHAR(64) NULL"],
+  ["order_items", "gst_rate_bps", "INT NOT NULL DEFAULT 0"],
+];
+
+const INDEXES: [table: string, name: string, definition: string][] = [
+  ["products", "uniq_product_sku", "UNIQUE KEY uniq_product_sku (sku)"],
+  ["products", "idx_featured", "KEY idx_featured (is_featured, status)"],
+];
+
+// A failed upgrade step is logged but never blocks the rest of the site (bookings
+// keep working even if, say, the database user lacks ALTER permission).
+async function migrate(p: mysql.Pool) {
+  for (const [table, column, definition] of COLUMNS) {
+    try {
+      const [rows] = await p.query<mysql.RowDataPacket[]>(
+        "SELECT COUNT(*) AS n FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?",
+        [table, column],
+      );
+      if (Number(rows[0]?.["n"]) === 0) {
+        await p.query(`ALTER TABLE ${table} ADD COLUMN ${column} ${definition}`);
+      }
+    } catch (error) {
+      console.error(`[db] could not add column ${table}.${column}`, error);
+    }
+  }
+  for (const [table, name, definition] of INDEXES) {
+    try {
+      const [rows] = await p.query<mysql.RowDataPacket[]>(
+        "SELECT COUNT(*) AS n FROM information_schema.STATISTICS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND INDEX_NAME = ?",
+        [table, name],
+      );
+      if (Number(rows[0]?.["n"]) === 0) await p.query(`ALTER TABLE ${table} ADD ${definition}`);
+    } catch (error) {
+      console.error(`[db] could not add index ${table}.${name}`, error);
+    }
+  }
+}
 
 async function seedCategories(p: mysql.Pool) {
   for (const [i, top] of DEFAULT_CATEGORIES.entries()) {
@@ -196,6 +277,7 @@ let schemaReady: Promise<void> | undefined;
 
 async function ensureSchema(p: mysql.Pool) {
   for (const statement of SCHEMA) await p.query(statement);
+  await migrate(p);
   await p.query("INSERT IGNORE INTO booking_settings (id, data) VALUES (1, ?)", [
     JSON.stringify(defaultBookingSettings),
   ]);

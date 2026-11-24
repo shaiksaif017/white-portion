@@ -32,6 +32,20 @@ export interface ProductSummary {
   kind: CategoryKind;
   availability: Availability;
   purchasable: boolean; // false for prescription-only pharma or out of stock
+  isFeatured: boolean;
+  hasVariants: boolean; // price is then the lowest variant price ("From ₹…")
+  isSample: boolean;
+  createdAt: string;
+}
+
+export interface PublicVariant {
+  id: number;
+  name: string;
+  sku: string | null;
+  pricePaise: number;
+  compareAtPaise: number | null;
+  availability: Availability;
+  purchasable: boolean;
 }
 
 export interface ProductDetail extends ProductSummary {
@@ -42,7 +56,60 @@ export interface ProductDetail extends ProductSummary {
   topCategoryName: string;
   requiresPrescription: boolean;
   isOtc: boolean;
+  sku: string | null;
+  gstRateBps: number;
+  previewFileId: number | null;
+  variants: PublicVariant[];
   related: ProductSummary[];
+}
+
+export interface AdminVariant {
+  id?: number;
+  name: string;
+  sku: string | null;
+  pricePaise: number;
+  compareAtPaise: number | null;
+  stock: number | null;
+}
+
+export const GST_RATES_BPS = [0, 500, 1200, 1800, 2800] as const;
+
+// Default GST rate when a product is created, by category kind (owner can change it).
+export const DEFAULT_GST_BPS: Record<CategoryKind, number> = {
+  physical: 1800,
+  ebook: 1800,
+  course: 1800,
+  pharma: 1200,
+};
+
+// GST contained in a GST-inclusive amount, rounded to the paisa.
+export function gstIncluded(amountPaise: number, rateBps: number): number {
+  if (rateBps <= 0) return 0;
+  return Math.round((amountPaise * rateBps) / (10_000 + rateBps));
+}
+
+export type ProductSort = "featured" | "newest" | "price_asc" | "price_desc" | "name";
+export const PRODUCT_SORTS: ProductSort[] = [
+  "featured",
+  "newest",
+  "price_asc",
+  "price_desc",
+  "name",
+];
+export const SORT_LABEL: Record<ProductSort, string> = {
+  featured: "Featured",
+  newest: "Newest",
+  price_asc: "Price: low to high",
+  price_desc: "Price: high to low",
+  name: "Name A–Z",
+};
+
+export interface ProductQuery {
+  q?: string | undefined;
+  sort?: ProductSort | undefined;
+  inStock?: boolean | undefined;
+  minRupees?: number | undefined;
+  maxRupees?: number | undefined;
 }
 
 export type Availability = "in_stock" | "low_stock" | "out_of_stock" | "digital" | "enquiry_only";
@@ -65,6 +132,13 @@ export interface AdminProduct {
   imageIds: number[];
   digitalFileId: number | null;
   digitalFileName: string | null;
+  sku: string | null;
+  isFeatured: boolean;
+  gstRateBps: number;
+  previewFileId: number | null;
+  previewFileName: string | null;
+  variants: AdminVariant[];
+  isSample: boolean;
   updatedAt: string;
 }
 
@@ -82,7 +156,11 @@ export const DEFAULT_CATEGORIES: {
     description:
       "Carefully selected supplements to support your training and everyday nutrition. Supplements are not a substitute for a balanced diet.",
     children: [
-      { slug: "protein", name: "Protein", description: "Protein powders and protein foods." },
+      {
+        slug: "protein",
+        name: "Protein Supplements",
+        description: "Protein powders and protein foods.",
+      },
       {
         slug: "vitamins",
         name: "Vitamins & Minerals",
@@ -90,8 +168,23 @@ export const DEFAULT_CATEGORIES: {
       },
       {
         slug: "pre-workout",
-        name: "Pre-workout",
+        name: "Pre-Workout",
         description: "Training-day energy and focus products.",
+      },
+      {
+        slug: "post-workout",
+        name: "Post-Workout",
+        description: "Recovery support after training.",
+      },
+      {
+        slug: "sports-nutrition",
+        name: "Sports Nutrition",
+        description: "Hydration, electrolytes and performance nutrition.",
+      },
+      {
+        slug: "general-wellness",
+        name: "General Wellness",
+        description: "Everyday health and wellbeing support.",
       },
       {
         slug: "other-supplements",
@@ -121,6 +214,21 @@ export const DEFAULT_CATEGORIES: {
         slug: "wellness-guides",
         name: "Wellness Guides",
         description: "Sleep, stress and healthy habits.",
+      },
+      {
+        slug: "weight-management-guides",
+        name: "Weight Management Guides",
+        description: "Sustainable fat loss and weight maintenance.",
+      },
+      {
+        slug: "muscle-building-guides",
+        name: "Muscle Building Guides",
+        description: "Hypertrophy training and nutrition.",
+      },
+      {
+        slug: "beginner-fitness-guides",
+        name: "Beginner Fitness Guides",
+        description: "Start training with confidence.",
       },
     ],
   },
@@ -244,6 +352,28 @@ export const AVAILABILITY_LABEL: Record<Availability, string> = {
 
 // Admin form validation. Prices arrive in rupees from the form and are stored in paise.
 const text = (max: number) => z.string().trim().max(max);
+
+// Letters, numbers, dash and underscore; stored upper-case. Empty means "no SKU".
+export const SkuSchema = z
+  .string()
+  .trim()
+  .max(64)
+  .transform((s) => s.toUpperCase())
+  .pipe(z.string().regex(/^[A-Z0-9_-]*$/, "SKUs use only letters, numbers, - and _"))
+  .transform((s) => (s === "" ? null : s));
+
+export const VariantInputSchema = z
+  .object({
+    id: z.number().int().positive().optional(),
+    name: text(120).pipe(z.string().min(1, "Each variant needs a name, e.g. 1 kg / Chocolate")),
+    sku: SkuSchema.nullable(),
+    priceRupees: z.number().min(0).max(10_000_000),
+    compareAtRupees: z.number().min(0).max(10_000_000).nullable(),
+    stock: z.number().int().min(0).max(1_000_000).nullable(),
+  })
+  .refine((v) => v.compareAtRupees === null || v.compareAtRupees > v.priceRupees, {
+    message: "A variant's 'was' price must be higher than its price",
+  });
 export const ProductInputSchema = z
   .object({
     id: z.number().int().positive().optional(),
@@ -261,9 +391,28 @@ export const ProductInputSchema = z
     requiresPrescription: z.boolean(),
     imageIds: z.array(z.number().int().positive()).max(8),
     digitalFileId: z.number().int().positive().nullable(),
+    sku: SkuSchema.nullable().default(null),
+    isFeatured: z.boolean().default(false),
+    gstRateBps: z
+      .number()
+      .int()
+      .refine((v) => (GST_RATES_BPS as readonly number[]).includes(v), "Choose a GST rate")
+      .optional(),
+    previewFileId: z.number().int().positive().nullable().default(null),
+    variants: z.array(VariantInputSchema).max(30).default([]),
   })
   .refine((p) => p.compareAtRupees === null || p.compareAtRupees > p.priceRupees, {
     message: "The 'was' price must be higher than the price",
+  })
+  .refine(
+    (p) => {
+      const skus = [p.sku, ...p.variants.map((v) => v.sku)].filter(Boolean);
+      return new Set(skus).size === skus.length;
+    },
+    { message: "Each SKU must be different" },
+  )
+  .refine((p) => new Set(p.variants.map((v) => v.name.toLowerCase())).size === p.variants.length, {
+    message: "Each variant needs a different name",
   });
 export type ProductInput = z.input<typeof ProductInputSchema>;
 

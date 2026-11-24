@@ -25,13 +25,18 @@ export function KindIcon({
 export function Price({
   pricePaise,
   compareAtPaise,
+  from = false,
 }: {
   pricePaise: number;
   compareAtPaise: number | null;
+  from?: boolean;
 }) {
   return (
     <span className="inline-flex items-baseline gap-2">
-      <span className="font-semibold text-charcoal">{formatINR(pricePaise)}</span>
+      <span className="font-semibold text-charcoal">
+        {from && <span className="text-[11px] font-normal text-muted-foreground mr-1">From</span>}
+        {formatINR(pricePaise)}
+      </span>
       {compareAtPaise !== null && compareAtPaise > pricePaise && (
         <>
           <span className="text-xs text-muted-foreground line-through">
@@ -84,7 +89,17 @@ export function ProductCard({ product }: { product: ProductSummary }) {
       params={{ slug: product.slug }}
       className="group page-card !p-0 overflow-hidden flex flex-col hover:border-primary transition-colors"
     >
-      <div className="aspect-square overflow-hidden bg-secondary">
+      <div className="relative aspect-square overflow-hidden bg-secondary">
+        {(product.isFeatured || product.isSample) && (
+          <div className="absolute top-2 left-2 z-10 flex gap-1.5">
+            {product.isFeatured && (
+              <span className="px-2 py-0.5 rounded bg-primary text-primary-foreground text-[9px] font-bold tracking-widest">
+                FEATURED
+              </span>
+            )}
+            {product.isSample && <SampleBadge />}
+          </div>
+        )}
         <ProductImage
           imageId={product.imageId}
           alt={product.name}
@@ -106,7 +121,11 @@ export function ProductCard({ product }: { product: ProductSummary }) {
           {product.availability === "enquiry_only" ? (
             <span className="text-xs font-semibold text-charcoal">On enquiry</span>
           ) : (
-            <Price pricePaise={product.pricePaise} compareAtPaise={product.compareAtPaise} />
+            <Price
+              pricePaise={product.pricePaise}
+              compareAtPaise={product.compareAtPaise}
+              from={product.hasVariants}
+            />
           )}
           <span
             className={`text-[10px] font-semibold ${product.availability === "out_of_stock" ? "text-destructive" : "text-muted-foreground"}`}
@@ -132,5 +151,17 @@ export function TrustRow() {
         delivered after verified payment
       </span>
     </div>
+  );
+}
+
+// Marks demo content so it is never mistaken for a real product or order.
+export function SampleBadge() {
+  return (
+    <span
+      title="Sample data for testing. Remove it from Admin → Products → Sample data."
+      className="px-2 py-0.5 rounded bg-gold-accent text-charcoal text-[9px] font-bold tracking-widest"
+    >
+      SAMPLE
+    </span>
   );
 }

@@ -366,10 +366,18 @@ function OrderRow({
                     <li key={i.id} className="flex justify-between gap-3">
                       <span>
                         {i.qty} × {i.name}
+                        {i.variantName && <> ({i.variantName})</>}
+                        {i.sku && <span className="text-muted-foreground"> · {i.sku}</span>}
                       </span>
                       <span>{formatINR(i.unitPaise * i.qty)}</span>
                     </li>
                   ))}
+                  {o.discountPaise > 0 && (
+                    <li className="flex justify-between gap-3 text-primary border-t border-border pt-1">
+                      <span>Discount{o.couponCode ? ` (${o.couponCode})` : ""}</span>
+                      <span>−{formatINR(o.discountPaise)}</span>
+                    </li>
+                  )}
                   <li className="flex justify-between gap-3 text-muted-foreground border-t border-border pt-1">
                     <span>Shipping</span>
                     <span>{formatINR(o.shippingPaise)}</span>
@@ -378,6 +386,9 @@ function OrderRow({
                     <span>Total</span>
                     <span>{formatINR(o.totalPaise)}</span>
                   </li>
+                  {o.taxPaise > 0 && (
+                    <li className="text-muted-foreground">Includes GST {formatINR(o.taxPaise)}</li>
+                  )}
                 </ul>
                 <p className="text-muted-foreground">
                   Razorpay payment: {o.razorpayPaymentId ?? "—"}

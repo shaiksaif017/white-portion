@@ -6,15 +6,18 @@ import type { z } from "zod";
 
 import {
   type Address,
-  type CartProduct,
+  type CartItemInfo,
   type CheckoutSchema,
+  type CouponRule,
   type FulfilmentStatus,
   type OrderItem,
   type OrderRecord,
   type PaymentStatus,
   type ShopSettings,
+  type Totals,
   computeTotals,
   defaultShopSettings,
+  lineKey,
   MAX_QTY,
 } from "@/lib/order-types";
 import { type CategoryKind, availabilityOf } from "@/lib/shop-types";
@@ -46,57 +49,115 @@ export async function saveShopSettings(s: ShopSettings): Promise<void> {
 
 // ---------- cart ----------
 
-interface ProductRow {
-  id: number;
-  slug: string;
-  name: string;
-  pricePaise: number;
-  imageId: number | null;
-  kind: CategoryKind;
-  stock: number | null;
-  purchasable: boolean;
+interface LineRow extends CartItemInfo {
   digitalFileId: number | null;
 }
 
-async function loadProducts(ids: number[]): Promise<Map<number, ProductRow>> {
-  const out = new Map<number, ProductRow>();
+type Ref = { productId: number; variantId: number | null };
+
+// Fresh price, stock and availability for each cart line, keyed by lineKey().
+export async function loadLines(refs: Ref[]): Promise<Map<string, LineRow>> {
+  const out = new Map<string, LineRow>();
+  const ids = [...new Set(refs.map((r) => r.productId))];
   if (ids.length === 0) return out;
   const db = await getDb();
   const [rows] = await db.query<RowDataPacket[]>(
     `SELECT p.id, p.slug, p.name, p.price_paise, p.stock, p.is_otc, p.requires_prescription,
-            p.digital_file_id, c.kind,
+            p.digital_file_id, p.sku, p.gst_rate_bps, c.kind,
             (SELECT file_id FROM product_images i WHERE i.product_id = p.id ORDER BY i.sort_order, i.id LIMIT 1) AS image_id
      FROM products p JOIN product_categories c ON c.id = p.category_id
      WHERE p.status = 'active' AND p.id IN (?)`,
     [ids],
   );
-  for (const r of rows) {
+  const [vrows] = await db.query<RowDataPacket[]>(
+    "SELECT * FROM product_variants WHERE product_id IN (?)",
+    [ids],
+  );
+  const variantsOf = new Map<number, RowDataPacket[]>();
+  for (const v of vrows) {
+    const list = variantsOf.get(Number(v["product_id"])) ?? [];
+    list.push(v);
+    variantsOf.set(Number(v["product_id"]), list);
+  }
+  const byId = new Map(rows.map((r) => [Number(r["id"]), r]));
+
+  for (const ref of refs) {
+    const r = byId.get(ref.productId);
+    if (!r) continue; // product no longer sold
     const kind = String(r["kind"]) as CategoryKind;
-    const stock = r["stock"] === null ? null : Number(r["stock"]);
+    const digital = kind === "ebook" || kind === "course";
+    const variants = variantsOf.get(ref.productId) ?? [];
+    const v = ref.variantId ? variants.find((x) => Number(x["id"]) === ref.variantId) : undefined;
+    if (ref.variantId && !v) continue; // variant removed
+    let problem: string | null = null;
+    if (!ref.variantId && variants.length > 0) problem = "Please choose an option for this product";
+    const rawStock = v ? v["stock"] : r["stock"];
+    const stock = digital || rawStock === null ? null : Number(rawStock);
     const { purchasable } = availabilityOf({
       kind,
       stock,
       requiresPrescription: Boolean(r["requires_prescription"]),
       isOtc: Boolean(r["is_otc"]),
     });
-    out.set(Number(r["id"]), {
-      id: Number(r["id"]),
+    out.set(lineKey(ref), {
+      productId: ref.productId,
+      variantId: v ? Number(v["id"]) : null,
       slug: String(r["slug"]),
       name: String(r["name"]),
-      pricePaise: Number(r["price_paise"]),
+      variantName: v ? String(v["name"]) : null,
+      sku: v?.["sku"] ? String(v["sku"]) : r["sku"] ? String(r["sku"]) : null,
+      pricePaise: Number(v ? v["price_paise"] : r["price_paise"]),
       imageId: r["image_id"] === null ? null : Number(r["image_id"]),
       kind,
-      stock: kind === "ebook" || kind === "course" ? null : stock,
-      purchasable,
+      purchasable: purchasable && !problem,
+      stock,
+      gstRateBps: Number(r["gst_rate_bps"]),
+      problem,
       digitalFileId: r["digital_file_id"] === null ? null : Number(r["digital_file_id"]),
     });
   }
   return out;
 }
 
-export async function getCartProducts(ids: number[]): Promise<CartProduct[]> {
-  const map = await loadProducts([...new Set(ids)]);
+export async function getCartItems(refs: Ref[]): Promise<CartItemInfo[]> {
+  const map = await loadLines(refs);
   return [...map.values()].map(({ digitalFileId: _d, ...p }) => p);
+}
+
+// ---------- coupons ----------
+
+function toRule(r: RowDataPacket): CouponRule {
+  return {
+    code: String(r["code"]),
+    type: String(r["discount_type"]) as CouponRule["type"],
+    value: Number(r["discount_value"]),
+    minOrderPaise: Number(r["min_order_paise"]),
+    maxDiscountPaise: r["max_discount_paise"] === null ? null : Number(r["max_discount_paise"]),
+  };
+}
+
+// Checks a code is active, in its date window and not used up. Dates are whole days in
+// India time (the shop's time zone).
+export async function findUsableCoupon(
+  code: string,
+): Promise<{ ok: true; rule: CouponRule } | { ok: false; error: string }> {
+  const db = await getDb();
+  const [rows] = await db.query<RowDataPacket[]>(
+    `SELECT *, DATE(CONVERT_TZ(UTC_TIMESTAMP(), '+00:00', '+05:30')) AS today_ist
+     FROM coupons WHERE code = ?`,
+    [code.trim().toUpperCase()],
+  );
+  const r = rows[0];
+  if (!r || !r["active"]) return { ok: false, error: "This coupon code isn't valid." };
+  const today = String(r["today_ist"]).slice(0, 10);
+  const day = (v: unknown) => (v ? String(v).slice(0, 10) : null);
+  const starts = day(r["starts_at"]);
+  const ends = day(r["ends_at"]);
+  if (starts && today < starts) return { ok: false, error: "This coupon isn't active yet." };
+  if (ends && today > ends) return { ok: false, error: "This coupon has expired." };
+  if (r["max_uses"] !== null && Number(r["used_count"]) >= Number(r["max_uses"]))
+    return { ok: false, error: "This coupon has been fully used." };
+  return { ok: true, rule: toRule(r) };
 }
 
 // ---------- creating orders ----------
@@ -112,37 +173,78 @@ function newOrderNumber(): string {
 export type CreateOrderResult =
   { ok: true; order: OrderRecord; accessToken: string } | { ok: false; error: string };
 
-export async function createPendingOrder(
-  input: ParsedCheckout,
-  settings: ShopSettings,
-): Promise<CreateOrderResult> {
-  // merge duplicate lines
-  const qtyById = new Map<number, number>();
-  for (const it of input.items)
-    qtyById.set(it.productId, (qtyById.get(it.productId) ?? 0) + it.qty);
+export type PricedCart =
+  | { ok: true; lines: { item: LineRow; qty: number }[]; totals: Totals; coupon: CouponRule | null }
+  | { ok: false; error: string };
 
-  const products = await loadProducts([...qtyById.keys()]);
-  const lines: { p: ProductRow; qty: number }[] = [];
-  for (const [id, qty] of qtyById) {
-    const p = products.get(id);
+// Validates the cart and works out the totals exactly as the order will be charged.
+export async function priceCart(
+  items: { productId: number; variantId: number | null; qty: number }[],
+  couponCode: string | null,
+  settings: ShopSettings,
+): Promise<PricedCart> {
+  // merge duplicate lines
+  const merged = new Map<string, { ref: Ref; qty: number }>();
+  for (const it of items) {
+    const key = lineKey(it);
+    const prev = merged.get(key);
+    merged.set(key, {
+      ref: { productId: it.productId, variantId: it.variantId },
+      qty: (prev?.qty ?? 0) + it.qty,
+    });
+  }
+  const info = await loadLines([...merged.values()].map((m) => m.ref));
+  const lines: { item: LineRow; qty: number }[] = [];
+  for (const [key, { qty }] of merged) {
+    const p = info.get(key);
     if (!p)
       return {
         ok: false,
         error: "An item in your cart is no longer available. Please review your cart.",
       };
+    const label = p.variantName ? `${p.name} (${p.variantName})` : p.name;
+    if (p.problem) return { ok: false, error: `${label}: ${p.problem.toLowerCase()}.` };
     if (!p.purchasable)
-      return { ok: false, error: `"${p.name}" can't be ordered online right now.` };
-    if (qty > MAX_QTY)
-      return { ok: false, error: `You can order up to ${MAX_QTY} of "${p.name}".` };
+      return { ok: false, error: `"${label}" can't be ordered online right now.` };
+    if (qty > MAX_QTY) return { ok: false, error: `You can order up to ${MAX_QTY} of "${label}".` };
     if (p.stock !== null && qty > p.stock)
-      return { ok: false, error: `Only ${p.stock} of "${p.name}" left in stock.` };
-    lines.push({ p, qty });
+      return { ok: false, error: `Only ${p.stock} of "${label}" left in stock.` };
+    lines.push({ item: p, qty });
   }
 
+  let coupon: CouponRule | null = null;
+  if (couponCode) {
+    const found = await findUsableCoupon(couponCode);
+    if (!found.ok) return found;
+    coupon = found.rule;
+  }
   const totals = computeTotals(
-    lines.map((l) => ({ unitPaise: l.p.pricePaise, qty: l.qty, kind: l.p.kind })),
+    lines.map((l) => ({
+      unitPaise: l.item.pricePaise,
+      qty: l.qty,
+      kind: l.item.kind,
+      gstRateBps: l.item.gstRateBps,
+    })),
     settings,
+    coupon,
   );
+  if (coupon && totals.discountPaise === 0) {
+    return {
+      ok: false,
+      error: `Coupon ${coupon.code} applies to orders over ₹${(coupon.minOrderPaise / 100).toLocaleString("en-IN")}.`,
+    };
+  }
+  return { ok: true, lines, totals, coupon };
+}
+
+export async function createPendingOrder(
+  input: ParsedCheckout,
+  settings: ShopSettings,
+  opts: { isSample?: boolean } = {},
+): Promise<CreateOrderResult> {
+  const priced = await priceCart(input.items, input.couponCode, settings);
+  if (!priced.ok) return priced;
+  const { lines, totals, coupon } = priced;
   if (totals.shipping && !input.address) {
     return { ok: false, error: "Please enter a delivery address." };
   }
@@ -160,8 +262,8 @@ export async function createPendingOrder(
       await conn.beginTransaction();
       const [res] = await conn.query<ResultSetHeader>(
         `INSERT INTO orders (order_number, access_token, name, email, phone, address, notes,
-           subtotal_paise, shipping_paise, total_paise)
-         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+           subtotal_paise, discount_paise, coupon_code, shipping_paise, tax_paise, total_paise, is_sample)
+         VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
         [
           orderNumber,
           accessToken,
@@ -171,23 +273,32 @@ export async function createPendingOrder(
           totals.shipping && input.address ? JSON.stringify(input.address) : null,
           input.notes,
           totals.subtotalPaise,
+          totals.discountPaise,
+          coupon?.code ?? null,
           totals.shippingPaise,
+          totals.taxPaise,
           totals.totalPaise,
+          opts.isSample ? 1 : 0,
         ],
       );
-      for (const { p, qty } of lines) {
+      for (const { item: p, qty } of lines) {
         await conn.query(
-          `INSERT INTO order_items (order_id, product_id, product_slug, name, kind, unit_paise, qty, digital_file_id)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+          `INSERT INTO order_items (order_id, product_id, product_slug, name, kind, unit_paise, qty,
+             digital_file_id, variant_id, variant_name, sku, gst_rate_bps)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
           [
             res.insertId,
-            p.id,
+            p.productId,
             p.slug,
             p.name,
             p.kind,
             p.pricePaise,
             qty,
             p.kind === "ebook" ? p.digitalFileId : null,
+            p.variantId,
+            p.variantName,
+            p.sku,
+            p.gstRateBps,
           ],
         );
       }
@@ -216,7 +327,7 @@ export async function setRazorpayOrderId(orderId: number, razorpayOrderId: strin
 
 // Marks the order paid exactly once (safe to call from both the browser callback and
 // the webhook). Returns justPaid=true only for the call that made the change, so
-// stock is reduced and emails are sent once.
+// stock, coupon usage and emails happen once.
 export async function markOrderPaid(
   razorpayOrderId: string,
   razorpayPaymentId: string,
@@ -227,7 +338,7 @@ export async function markOrderPaid(
   try {
     await conn.beginTransaction();
     const [rows] = await conn.query<RowDataPacket[]>(
-      "SELECT id, payment_status, total_paise FROM orders WHERE razorpay_order_id = ? FOR UPDATE",
+      "SELECT id, payment_status, total_paise, coupon_code FROM orders WHERE razorpay_order_id = ? FOR UPDATE",
       [razorpayOrderId],
     );
     const row = rows[0];
@@ -236,7 +347,7 @@ export async function markOrderPaid(
       return { error: "Order not found" };
     }
     const id = Number(row["id"]);
-    if (row["payment_status"] === "paid") {
+    if (row["payment_status"] === "paid" || row["payment_status"] === "refunded") {
       await conn.rollback();
       const order = await getOrderById(id);
       return order ? { order, justPaid: false } : { error: "Order not found" };
@@ -246,11 +357,12 @@ export async function markOrderPaid(
       console.error("[orders] amount mismatch", razorpayOrderId, amountPaise, row["total_paise"]);
       return { error: "Paid amount does not match the order total" };
     }
-    await conn.query(
-      "UPDATE orders SET payment_status = 'paid', razorpay_payment_id = ?, paid_at = UTC_TIMESTAMP() WHERE id = ?",
-      [razorpayPaymentId, id],
+    await markPaidWithin(
+      conn,
+      id,
+      razorpayPaymentId,
+      row["coupon_code"] ? String(row["coupon_code"]) : null,
     );
-    await reduceStock(conn, id);
     await conn.commit();
     const order = await getOrderById(id);
     return order ? { order, justPaid: true } : { error: "Order not found" };
@@ -262,16 +374,40 @@ export async function markOrderPaid(
   }
 }
 
+// Shared by real payments and the sample-data loader.
+export async function markPaidWithin(
+  conn: PoolConnection,
+  orderId: number,
+  paymentId: string,
+  couponCode: string | null,
+) {
+  await conn.query(
+    "UPDATE orders SET payment_status = 'paid', razorpay_payment_id = ?, paid_at = UTC_TIMESTAMP() WHERE id = ?",
+    [paymentId, orderId],
+  );
+  await reduceStock(conn, orderId);
+  if (couponCode) {
+    await conn.query("UPDATE coupons SET used_count = used_count + 1 WHERE code = ?", [couponCode]);
+  }
+}
+
 async function reduceStock(conn: PoolConnection, orderId: number) {
   const [items] = await conn.query<RowDataPacket[]>(
-    "SELECT product_id, qty FROM order_items WHERE order_id = ? AND product_id IS NOT NULL",
+    "SELECT product_id, variant_id, qty FROM order_items WHERE order_id = ? AND product_id IS NOT NULL",
     [orderId],
   );
   for (const it of items) {
-    await conn.query(
-      "UPDATE products SET stock = GREATEST(stock - ?, 0) WHERE id = ? AND stock IS NOT NULL",
-      [Number(it["qty"]), Number(it["product_id"])],
-    );
+    if (it["variant_id"] !== null) {
+      await conn.query(
+        "UPDATE product_variants SET stock = GREATEST(stock - ?, 0) WHERE id = ? AND stock IS NOT NULL",
+        [Number(it["qty"]), Number(it["variant_id"])],
+      );
+    } else {
+      await conn.query(
+        "UPDATE products SET stock = GREATEST(stock - ?, 0) WHERE id = ? AND stock IS NOT NULL",
+        [Number(it["qty"]), Number(it["product_id"])],
+      );
+    }
   }
 }
 
@@ -298,8 +434,12 @@ function toOrder(r: RowDataPacket, items: OrderItem[]): OrderRecord {
     address,
     notes: String(r["notes"] ?? ""),
     subtotalPaise: Number(r["subtotal_paise"]),
+    discountPaise: Number(r["discount_paise"] ?? 0),
+    couponCode: r["coupon_code"] ? String(r["coupon_code"]) : null,
     shippingPaise: Number(r["shipping_paise"]),
+    taxPaise: Number(r["tax_paise"] ?? 0),
     totalPaise: Number(r["total_paise"]),
+    isSample: Boolean(r["is_sample"]),
     razorpayOrderId: r["razorpay_order_id"] ? String(r["razorpay_order_id"]) : null,
     razorpayPaymentId: r["razorpay_payment_id"] ? String(r["razorpay_payment_id"]) : null,
     trackingInfo: String(r["tracking_info"] ?? ""),
@@ -320,6 +460,9 @@ function toItem(r: RowDataPacket): OrderItem {
     unitPaise: Number(r["unit_paise"]),
     qty: Number(r["qty"]),
     hasDownload: r["digital_file_id"] !== null,
+    variantName: r["variant_name"] ? String(r["variant_name"]) : null,
+    sku: r["sku"] ? String(r["sku"]) : null,
+    gstRateBps: Number(r["gst_rate_bps"] ?? 0),
   };
 }
 
@@ -456,7 +599,10 @@ export function ordersToCsv(orders: OrderRecord[]): string {
     "Phone",
     "Items",
     "Subtotal (INR)",
+    "Coupon",
+    "Discount (INR)",
     "Shipping (INR)",
+    "GST included (INR)",
     "Total (INR)",
     "Address",
     "Razorpay payment",
@@ -471,9 +617,17 @@ export function ordersToCsv(orders: OrderRecord[]): string {
       o.name,
       o.email,
       o.phone,
-      o.items.map((i) => `${i.qty} x ${i.name}`).join("; "),
+      o.items
+        .map(
+          (i) =>
+            `${i.qty} x ${i.name}${i.variantName ? ` (${i.variantName})` : ""}${i.sku ? ` [${i.sku}]` : ""}`,
+        )
+        .join("; "),
       (o.subtotalPaise / 100).toFixed(2),
+      o.couponCode ?? "",
+      (o.discountPaise / 100).toFixed(2),
       (o.shippingPaise / 100).toFixed(2),
+      (o.taxPaise / 100).toFixed(2),
       (o.totalPaise / 100).toFixed(2),
       o.address
         ? `${o.address.line1}, ${o.address.line2 ? `${o.address.line2}, ` : ""}${o.address.city}, ${o.address.state} ${o.address.pincode}`

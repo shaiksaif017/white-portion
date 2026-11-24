@@ -1,8 +1,8 @@
 import { createFileRoute, Link, notFound, useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, Check, MessageCircle, Minus, Plus, ShoppingBag } from "lucide-react";
+import { ArrowLeft, BookOpen, Check, MessageCircle, Minus, Plus, ShoppingBag } from "lucide-react";
 import { useState } from "react";
 
-import { Price, ProductCard, ProductImage, TrustRow } from "@/components/shop-ui";
+import { Price, ProductCard, ProductImage, SampleBadge, TrustRow } from "@/components/shop-ui";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { brand } from "@/lib/brand";
@@ -41,9 +41,20 @@ export const Route = createFileRoute("/product/$slug")({
 function ProductPage() {
   const { product: p, paymentsEnabled } = Route.useLoaderData();
   const [active, setActive] = useState(0);
+  // Products sold in several options: start on the first one that can be bought.
+  const [variantId, setVariantId] = useState<number | null>(
+    () => (p.variants.find((v) => v.purchasable) ?? p.variants[0])?.id ?? null,
+  );
+  const variant = p.variants.find((v) => v.id === variantId) ?? null;
+  const price = variant
+    ? { pricePaise: variant.pricePaise, compareAtPaise: variant.compareAtPaise }
+    : { pricePaise: p.pricePaise, compareAtPaise: p.compareAtPaise };
+  const availability = variant ? variant.availability : p.availability;
+  const purchasable = variant ? variant.purchasable : p.purchasable;
+  const sku = variant?.sku ?? p.sku;
   const images = p.imageIds.length ? p.imageIds : [null];
   const enquiry = whatsappUrl(
-    `Hello White Portion Wellness! I'm interested in "${p.name}"${p.availability === "enquiry_only" ? "" : ` (${formatINR(p.pricePaise)})`}.`,
+    `Hello White Portion Wellness! I'm interested in "${p.name}${variant ? ` (${variant.name})` : ""}"${availability === "enquiry_only" ? "" : ` (${formatINR(price.pricePaise)})`}.`,
   );
 
   return (
@@ -110,34 +121,83 @@ function ProductPage() {
 
           {/* Summary */}
           <div className="space-y-5">
-            <span className="text-[10px] font-bold tracking-widest text-primary uppercase">
-              {p.categoryName} · {KIND_LABEL[p.kind]}
-            </span>
+            <div className="flex flex-wrap items-center gap-2">
+              <span className="text-[10px] font-bold tracking-widest text-primary uppercase">
+                {p.categoryName} · {KIND_LABEL[p.kind]}
+              </span>
+              {p.isSample && <SampleBadge />}
+            </div>
             <h1 className="text-4xl md:text-5xl font-display font-medium text-charcoal leading-tight">
               {p.name}
             </h1>
-            {p.availability !== "enquiry_only" && (
-              <div className="text-2xl">
-                <Price pricePaise={p.pricePaise} compareAtPaise={p.compareAtPaise} />
+            {availability !== "enquiry_only" && (
+              <div className="space-y-1">
+                <div className="text-2xl">
+                  <Price pricePaise={price.pricePaise} compareAtPaise={price.compareAtPaise} />
+                </div>
+                {p.gstRateBps > 0 && (
+                  <p className="text-[11px] text-muted-foreground">
+                    Inclusive of {p.gstRateBps / 100}% GST
+                  </p>
+                )}
               </div>
             )}
             <p
-              className={`text-xs font-semibold ${p.availability === "out_of_stock" ? "text-destructive" : "text-primary"}`}
+              className={`text-xs font-semibold ${availability === "out_of_stock" ? "text-destructive" : "text-primary"}`}
             >
-              {AVAILABILITY_LABEL[p.availability]}
+              {AVAILABILITY_LABEL[availability]}
+              {sku && <span className="ml-3 font-normal text-muted-foreground">SKU {sku}</span>}
             </p>
             {p.shortDescription && (
               <p className="text-sm text-muted-foreground leading-relaxed">{p.shortDescription}</p>
             )}
 
+            {p.variants.length > 0 && (
+              <fieldset>
+                <legend className="text-xs font-bold text-charcoal mb-2">Choose an option</legend>
+                <div className="flex flex-wrap gap-2">
+                  {p.variants.map((v) => (
+                    <button
+                      key={v.id}
+                      type="button"
+                      aria-pressed={v.id === variantId}
+                      onClick={() => setVariantId(v.id)}
+                      className={`px-4 py-2 rounded border text-xs font-semibold transition-colors ${
+                        v.id === variantId
+                          ? "border-primary bg-primary text-primary-foreground"
+                          : "border-border text-charcoal hover:border-primary"
+                      } ${v.purchasable ? "" : "opacity-50 line-through"}`}
+                    >
+                      {v.name}
+                    </button>
+                  ))}
+                </div>
+              </fieldset>
+            )}
+
+            {p.previewFileId && (
+              <a
+                href={`/media/${p.previewFileId}`}
+                target="_blank"
+                rel="noopener"
+                className="inline-flex items-center gap-2 text-xs font-semibold text-primary underline underline-offset-4"
+              >
+                <BookOpen className="w-4 h-4" aria-hidden="true" /> Read a free preview (PDF)
+              </a>
+            )}
+
             <div data-purchase-area className="pt-2 space-y-3">
-              {p.purchasable && paymentsEnabled ? (
-                <AddToCart productId={p.id} digital={p.kind === "ebook" || p.kind === "course"} />
-              ) : p.purchasable ? (
+              {purchasable && paymentsEnabled ? (
+                <AddToCart
+                  productId={p.id}
+                  variantId={variant?.id ?? null}
+                  digital={p.kind === "ebook" || p.kind === "course"}
+                />
+              ) : purchasable ? (
                 <p className="text-xs text-muted-foreground">
                   Online checkout is opening soon. Message us to order now.
                 </p>
-              ) : p.availability === "enquiry_only" ? (
+              ) : availability === "enquiry_only" ? (
                 <p className="text-xs text-muted-foreground">
                   {p.requiresPrescription
                     ? "This product requires a valid prescription and is available on enquiry only."
@@ -149,13 +209,13 @@ function ProductPage() {
                 target="_blank"
                 rel="noopener noreferrer"
                 className={
-                  p.purchasable && paymentsEnabled
+                  purchasable && paymentsEnabled
                     ? "inline-flex items-center gap-2 text-xs font-semibold text-primary hover:underline"
                     : "inline-flex items-center gap-2 px-5 py-3 rounded bg-primary text-primary-foreground text-xs font-bold tracking-wider hover:bg-olive-deep transition-colors"
                 }
               >
                 <MessageCircle className="w-4 h-4" aria-hidden="true" />{" "}
-                {p.purchasable && paymentsEnabled
+                {purchasable && paymentsEnabled
                   ? "Questions? Ask us on WhatsApp"
                   : "ENQUIRE ON WHATSAPP"}
               </a>
@@ -225,13 +285,21 @@ function ProductPage() {
   );
 }
 
-function AddToCart({ productId, digital }: { productId: number; digital: boolean }) {
+function AddToCart({
+  productId,
+  variantId,
+  digital,
+}: {
+  productId: number;
+  variantId: number | null;
+  digital: boolean;
+}) {
   const [qty, setQty] = useState(1);
   const [added, setAdded] = useState(false);
   const navigate = useNavigate();
 
   function add() {
-    cart.add(productId, qty);
+    cart.add({ productId, variantId }, qty);
     setAdded(true);
     window.setTimeout(() => setAdded(false), 2500);
   }
@@ -279,7 +347,7 @@ function AddToCart({ productId, digital }: { productId: number; digital: boolean
         <button
           type="button"
           onClick={() => {
-            cart.add(productId, qty);
+            cart.add({ productId, variantId }, qty);
             void navigate({ to: "/checkout" });
           }}
           className="inline-flex items-center gap-2 px-5 py-3 rounded bg-primary text-primary-foreground text-xs font-bold tracking-wider hover:bg-olive-deep transition-colors"

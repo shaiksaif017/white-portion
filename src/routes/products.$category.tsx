@@ -1,7 +1,14 @@
-import { createFileRoute, Link, notFound } from "@tanstack/react-router";
+import { createFileRoute, Link, notFound, useNavigate } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
 import { z } from "zod";
 
+import {
+  type ProductSearch,
+  hasActiveFilters,
+  ProductFilters,
+  productSearchSchema,
+  toProductQuery,
+} from "@/components/product-filters";
 import { KindIcon, ProductCard, TrustRow } from "@/components/shop-ui";
 import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
@@ -10,17 +17,21 @@ import { getCategoryPage } from "@/lib/shop-api";
 import { whatsappUrl } from "@/lib/whatsapp";
 
 export const Route = createFileRoute("/products/$category")({
-  validateSearch: z.object({
+  validateSearch: productSearchSchema.extend({
     sub: z
       .string()
       .regex(/^[a-z0-9-]{1,80}$/)
       .optional()
       .catch(undefined),
   }),
-  loaderDeps: ({ search }) => ({ sub: search.sub }),
+  loaderDeps: ({ search }) => search,
   loader: async ({ params, deps }) => {
     const data = await getCategoryPage({
-      data: { slug: params.category, ...(deps.sub ? { sub: deps.sub } : {}) },
+      data: {
+        slug: params.category,
+        ...(deps.sub ? { sub: deps.sub } : {}),
+        ...toProductQuery(deps),
+      },
     });
     if (!data.found) throw notFound();
     return data;
@@ -44,7 +55,19 @@ export const Route = createFileRoute("/products/$category")({
 
 function CategoryPage() {
   const data = Route.useLoaderData();
+  const search = Route.useSearch();
+  const navigate = useNavigate({ from: Route.fullPath });
   if (!data.found) return null;
+  const filters: ProductSearch = {
+    q: search.q,
+    sort: search.sort,
+    stock: search.stock,
+    min: search.min,
+    max: search.max,
+  };
+  const filtering = hasActiveFilters(filters);
+  // "Coming soon" only when the collection is really empty, not when filters hide everything.
+  const collectionEmpty = (activeSubCount(data) ?? 0) === 0 && !filtering;
   const { category, subcategories, activeSub, products } = data;
   const isPharma = category.kind === "pharma";
 
@@ -110,6 +133,21 @@ function CategoryPage() {
           </div>
         )}
 
+        {!collectionEmpty && (
+          <ProductFilters
+            value={filters}
+            resultCount={products.length}
+            showStockFilter={category.kind === "physical" || category.kind === "pharma"}
+            onChange={(next) =>
+              void navigate({
+                search: (prev) => ({ sub: prev.sub, ...next }),
+                replace: true,
+                resetScroll: false,
+              })
+            }
+          />
+        )}
+
         {products.length > 0 ? (
           <>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 xl:grid-cols-4 gap-6">
@@ -121,6 +159,21 @@ function CategoryPage() {
               <TrustRow />
             </div>
           </>
+        ) : !collectionEmpty ? (
+          <div className="page-card !p-10 text-center max-w-xl mx-auto" role="status">
+            <h2 className="text-2xl font-display text-charcoal">No matching products</h2>
+            <p className="text-sm text-muted-foreground mt-2">
+              Try a different search or clear the filters.
+            </p>
+            <Link
+              to="/products/$category"
+              params={{ category: category.slug }}
+              search={{ sub: search.sub }}
+              className="inline-block mt-5 text-xs font-semibold text-primary underline underline-offset-4"
+            >
+              Clear filters
+            </Link>
+          </div>
         ) : (
           <div className="page-card !p-10 text-center max-w-xl mx-auto">
             <span className="w-14 h-14 mx-auto rounded-full bg-primary/10 text-primary flex items-center justify-center mb-4">
@@ -148,4 +201,12 @@ function CategoryPage() {
       <SiteFooter />
     </main>
   );
+}
+
+// Number of active products in the current view (sub-category or whole category).
+function activeSubCount(data: {
+  category: { productCount: number };
+  activeSub: { productCount: number } | null;
+}): number {
+  return data.activeSub ? data.activeSub.productCount : data.category.productCount;
 }

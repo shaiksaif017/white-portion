@@ -8,8 +8,8 @@ import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { brand } from "@/lib/brand";
 import { cart } from "@/lib/cart";
-import { confirmPayment, getShopStatus, startCheckout } from "@/lib/order-api";
-import { INDIAN_STATES } from "@/lib/order-types";
+import { applyCoupon, confirmPayment, getShopStatus, startCheckout } from "@/lib/order-api";
+import { type Totals, INDIAN_STATES, lineKey } from "@/lib/order-types";
 import { formatINR } from "@/lib/shop-types";
 
 export const Route = createFileRoute("/checkout")({
@@ -77,6 +77,42 @@ function CheckoutPage() {
     acceptTerms: false,
   });
   const [busy, setBusy] = useState(false);
+  const [couponInput, setCouponInput] = useState("");
+  const [coupon, setCoupon] = useState<{ code: string; totals: Totals; cartKey: string } | null>(
+    null,
+  );
+  const [couponMsg, setCouponMsg] = useState<string | null>(null);
+  const cartKey = rows.map((r) => `${lineKey(r.item)}x${r.qty}`).join(",");
+  // A coupon's totals only hold for the cart it was checked against.
+  const activeCoupon = coupon && coupon.cartKey === cartKey ? coupon : null;
+  const shownTotals = activeCoupon?.totals ?? totals;
+
+  async function handleApplyCoupon() {
+    const code = couponInput.trim();
+    if (!code) return;
+    setCouponMsg(null);
+    try {
+      const res = await applyCoupon({
+        data: {
+          code,
+          lines: rows.map((r) => ({
+            productId: r.item.productId,
+            variantId: r.item.variantId,
+            qty: r.qty,
+          })),
+        },
+      });
+      if (!res.ok) {
+        setCoupon(null);
+        setCouponMsg(res.error);
+        return;
+      }
+      setCoupon({ code: res.code, totals: res.totals, cartKey });
+      setCouponMsg(null);
+    } catch {
+      setCouponMsg("Could not check the coupon. Please try again.");
+    }
+  }
   const [message, setMessage] = useState<string | null>(null);
   const started = useRef<{ key: string; data: Started } | null>(null);
 
@@ -102,7 +138,12 @@ function CheckoutPage() {
     setBusy(true);
     try {
       const payload = {
-        items: rows.map((r) => ({ productId: r.product.id, qty: r.qty })),
+        items: rows.map((r) => ({
+          productId: r.item.productId,
+          variantId: r.item.variantId,
+          qty: r.qty,
+        })),
+        couponCode: activeCoupon?.code ?? null,
         name: form.name,
         email: form.email,
         phone: form.phone,
@@ -265,8 +306,7 @@ function CheckoutPage() {
                     />
                     <p className="text-[11px] text-muted-foreground mt-1">
                       We'll send your receipt
-                      {rows.some((r) => r.product.kind === "ebook") ? " and download link" : ""}{" "}
-                      here.
+                      {rows.some((r) => r.item.kind === "ebook") ? " and download link" : ""} here.
                     </p>
                   </div>
                   <div>
@@ -400,17 +440,80 @@ function CheckoutPage() {
               </h2>
               <ul className="text-sm space-y-2">
                 {rows.map((r) => (
-                  <li key={r.product.id} className="flex justify-between gap-3">
+                  <li key={lineKey(r.item)} className="flex justify-between gap-3">
                     <span className="text-charcoal">
-                      {r.qty} × {r.product.name}
+                      {r.qty} × {r.item.name}
+                      {r.item.variantName && (
+                        <span className="text-muted-foreground"> ({r.item.variantName})</span>
+                      )}
                     </span>
                     <span className="whitespace-nowrap">
-                      {formatINR(r.product.pricePaise * r.qty)}
+                      {formatINR(r.item.pricePaise * r.qty)}
                     </span>
                   </li>
                 ))}
               </ul>
-              <TotalsBlock totals={totals} settings={settings} />
+              <div className="space-y-1.5">
+                <div className="flex gap-2">
+                  <label htmlFor="co-coupon" className="sr-only">
+                    Coupon code
+                  </label>
+                  <input
+                    id="co-coupon"
+                    className="flex-1 min-w-0 p-2.5 rounded border border-border bg-background text-xs uppercase"
+                    placeholder="Coupon code"
+                    autoComplete="off"
+                    value={couponInput}
+                    onChange={(e) => setCouponInput(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter") {
+                        e.preventDefault();
+                        void handleApplyCoupon();
+                      }
+                    }}
+                  />
+                  {activeCoupon ? (
+                    <button
+                      type="button"
+                      className="px-3 text-[11px] font-semibold text-muted-foreground hover:text-destructive"
+                      onClick={() => {
+                        setCoupon(null);
+                        setCouponInput("");
+                      }}
+                    >
+                      Remove
+                    </button>
+                  ) : (
+                    <button
+                      type="button"
+                      className="px-3 rounded border border-primary text-primary text-[11px] font-bold hover:bg-primary hover:text-primary-foreground"
+                      onClick={() => void handleApplyCoupon()}
+                    >
+                      APPLY
+                    </button>
+                  )}
+                </div>
+                {couponMsg && (
+                  <p className="text-[11px] text-destructive" role="alert">
+                    {couponMsg}
+                  </p>
+                )}
+                {activeCoupon && (
+                  <p className="text-[11px] text-primary" role="status">
+                    Coupon {activeCoupon.code} applied.
+                  </p>
+                )}
+                {coupon && !activeCoupon && (
+                  <p className="text-[11px] text-muted-foreground">
+                    Your cart changed. Apply the coupon again.
+                  </p>
+                )}
+              </div>
+              <TotalsBlock
+                totals={shownTotals}
+                settings={settings}
+                couponCode={activeCoupon?.code ?? null}
+              />
               <label className="flex items-start gap-2 text-xs text-charcoal">
                 <input
                   type="checkbox"
@@ -436,7 +539,7 @@ function CheckoutPage() {
                   className="w-full inline-flex justify-center items-center gap-2 px-5 py-3.5 rounded bg-primary text-primary-foreground text-xs font-bold tracking-wider hover:bg-olive-deep transition-colors disabled:opacity-60"
                 >
                   <Lock className="w-3.5 h-3.5" aria-hidden="true" />
-                  {busy ? "PLEASE WAIT…" : `PAY ${formatINR(totals.totalPaise)}`}
+                  {busy ? "PLEASE WAIT…" : `PAY ${formatINR(shownTotals.totalPaise)}`}
                 </button>
               )}
               {message && (

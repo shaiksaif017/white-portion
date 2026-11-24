@@ -1,5 +1,8 @@
 // Admin-only upload endpoint for product images (public) and e-book files (private).
-//   POST /api/admin/upload?kind=image|download&name=<filename>   body = raw file bytes
+//   POST /api/admin/upload?kind=image|download|preview&name=<filename>   body = raw file bytes
+//   image    = public product image (JPG/PNG/WebP)
+//   download = private paid file (PDF/EPUB/ZIP), only released to buyers
+//   preview  = public free sample of an e-book (PDF only)
 import { createFileRoute } from "@tanstack/react-router";
 
 import { isAdminRequest, isSameOrigin } from "@/server/admin-session";
@@ -35,7 +38,7 @@ export const Route = createFileRoute("/api/admin/upload")({
         const name =
           (url.searchParams.get("name") ?? "file").replace(/[^\w.\- ]+/g, "_").slice(0, 120) ||
           "file";
-        if (kind !== "image" && kind !== "download")
+        if (kind !== "image" && kind !== "download" && kind !== "preview")
           return json({ ok: false, error: "Unknown upload type." }, 400);
 
         const max = kind === "image" ? MAX_IMAGE_BYTES : MAX_FILE_BYTES;
@@ -55,7 +58,12 @@ export const Route = createFileRoute("/api/admin/upload")({
           );
 
         const mime = sniffMime(data);
-        const allowed = kind === "image" ? IMAGE_TYPES : DOWNLOAD_TYPES;
+        const allowed =
+          kind === "image"
+            ? IMAGE_TYPES
+            : kind === "preview"
+              ? { "application/pdf": "pdf" }
+              : DOWNLOAD_TYPES;
         if (!mime || !(mime in allowed)) {
           return json(
             {
@@ -63,13 +71,15 @@ export const Route = createFileRoute("/api/admin/upload")({
               error:
                 kind === "image"
                   ? "Please upload a JPG, PNG or WebP image."
-                  : "Please upload a PDF, EPUB or ZIP file.",
+                  : kind === "preview"
+                    ? "Please upload the free preview as a PDF."
+                    : "Please upload a PDF, EPUB or ZIP file.",
             },
             415,
           );
         }
         try {
-          const id = await saveFile(name, mime, data, kind === "image");
+          const id = await saveFile(name, mime, data, kind !== "download");
           return json({ ok: true, id, name, size: data.length });
         } catch (error) {
           console.error("[upload] failed", error);

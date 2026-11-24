@@ -20,6 +20,7 @@ describe.skipIf(!enabled)("orders against a real database", async () => {
     email: "asha@example.com",
     phone: "9876543210",
     notes: "",
+    couponCode: null,
     acceptTerms: true as const,
   };
   const address = {
@@ -92,7 +93,11 @@ describe.skipIf(!enabled)("orders against a real database", async () => {
   });
 
   it("returns fresh cart products and hides prescription items from purchase", async () => {
-    const list = await orders.getCartProducts([whey, guide, rx, 999999]);
+    const list = (
+      await orders.getCartItems(
+        [whey, guide, rx, 999999].map((productId) => ({ productId, variantId: null })),
+      )
+    ).map((i) => ({ ...i, id: i.productId }));
     expect(list.map((p) => p.id).sort()).toEqual([whey, guide, rx].sort());
     expect(list.find((p) => p.id === rx)!.purchasable).toBe(false);
     expect(list.find((p) => p.id === guide)!.stock).toBeNull();
@@ -100,17 +105,17 @@ describe.skipIf(!enabled)("orders against a real database", async () => {
 
   it("rejects prescription items, too much stock and a missing address", async () => {
     const rxRes = await orders.createPendingOrder(
-      { ...customer, address, items: [{ productId: rx, qty: 1 }] },
+      { ...customer, address, items: [{ productId: rx, variantId: null, qty: 1 }] },
       settings,
     );
     expect(rxRes.ok).toBe(false);
     const stockRes = await orders.createPendingOrder(
-      { ...customer, address, items: [{ productId: whey, qty: 4 }] },
+      { ...customer, address, items: [{ productId: whey, variantId: null, qty: 4 }] },
       settings,
     );
     expect(stockRes).toMatchObject({ ok: false, error: expect.stringContaining("Only 3") });
     const noAddr = await orders.createPendingOrder(
-      { ...customer, address: null, items: [{ productId: whey, qty: 1 }] },
+      { ...customer, address: null, items: [{ productId: whey, variantId: null, qty: 1 }] },
       settings,
     );
     expect(noAddr.ok).toBe(false);
@@ -122,8 +127,8 @@ describe.skipIf(!enabled)("orders against a real database", async () => {
         ...customer,
         address,
         items: [
-          { productId: whey, qty: 2 },
-          { productId: guide, qty: 1 },
+          { productId: whey, variantId: null, qty: 2 },
+          { productId: guide, variantId: null, qty: 1 },
         ],
       },
       settings,
@@ -155,7 +160,7 @@ describe.skipIf(!enabled)("orders against a real database", async () => {
     expect(second).toMatchObject({ justPaid: false });
 
     // stock reduced once (3 - 2)
-    const [p] = await orders.getCartProducts([whey]);
+    const [p] = await orders.getCartItems([{ productId: whey, variantId: null }]);
     expect(p!.stock).toBe(1);
 
     // customer access needs the right token
@@ -184,7 +189,7 @@ describe.skipIf(!enabled)("orders against a real database", async () => {
 
   it("gives free shipping above the threshold and none for digital-only orders", async () => {
     const digital = await orders.createPendingOrder(
-      { ...customer, address: null, items: [{ productId: guide, qty: 1 }] },
+      { ...customer, address: null, items: [{ productId: guide, variantId: null, qty: 1 }] },
       settings,
     );
     if (!digital.ok) throw new Error(digital.error);

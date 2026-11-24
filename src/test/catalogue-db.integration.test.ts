@@ -51,7 +51,7 @@ describe.skipIf(!enabled)("catalogue against a real database", async () => {
       "online-courses",
       "pharmaceuticals",
     ]);
-    expect(cats.filter((c) => c.parentId !== null).length).toBe(13);
+    expect(cats.filter((c) => c.parentId !== null).length).toBe(19);
   });
 
   it("stores and returns uploaded files byte-for-byte, across chunks", async () => {

@@ -1,35 +1,44 @@
-// Browser cart: product ids + quantities in localStorage, shared across tabs.
-// Prices are never stored here; the cart page always asks the server.
+// Browser cart: product ids, variant ids and quantities in localStorage, shared across
+// tabs. Prices are never stored here; the cart page always asks the server.
 import { useSyncExternalStore } from "react";
 
-import { type CartLine, MAX_CART_LINES, MAX_QTY } from "./order-types";
+import { type CartLine, lineKey, MAX_CART_LINES, MAX_QTY } from "./order-types";
 
 const KEY = "wpw-cart-v1";
 const EMPTY: CartLine[] = [];
 const listeners = new Set<() => void>();
 let cache: CartLine[] | null = null;
 
+const isId = (v: unknown): v is number => Number.isInteger(v) && (v as number) > 0;
+
 function read(): CartLine[] {
   if (cache) return cache;
+  let lines: CartLine[] = [];
   try {
     const raw = window.localStorage.getItem(KEY);
     const parsed = raw ? (JSON.parse(raw) as unknown) : [];
-    cache = Array.isArray(parsed)
-      ? parsed
-          .filter(
-            (l): l is CartLine =>
-              typeof l === "object" &&
-              l !== null &&
-              Number.isInteger((l as CartLine).productId) &&
-              Number.isInteger((l as CartLine).qty),
-          )
-          .map((l) => ({ productId: l.productId, qty: Math.min(Math.max(l.qty, 1), MAX_QTY) }))
-          .slice(0, MAX_CART_LINES)
-      : [];
+    if (Array.isArray(parsed)) {
+      lines = parsed
+        .filter(
+          (l): l is { productId: number; variantId?: unknown; qty: number } =>
+            typeof l === "object" &&
+            l !== null &&
+            isId((l as CartLine).productId) &&
+            Number.isInteger((l as CartLine).qty),
+        )
+        .map((l) => ({
+          productId: l.productId,
+          // carts saved before variants existed have no variantId
+          variantId: isId(l.variantId) ? l.variantId : null,
+          qty: Math.min(Math.max(l.qty, 1), MAX_QTY),
+        }))
+        .slice(0, MAX_CART_LINES);
+    }
   } catch {
-    cache = [];
+    lines = [];
   }
-  return cache;
+  cache = lines;
+  return lines;
 }
 
 function write(lines: CartLine[]) {
@@ -65,28 +74,36 @@ export function useCartCount(): number {
   return useCart().reduce((n, l) => n + l.qty, 0);
 }
 
+type Ref = { productId: number; variantId: number | null };
+const same = (a: Ref, b: Ref) => lineKey(a) === lineKey(b);
+
 export const cart = {
-  add(productId: number, qty = 1) {
+  add(ref: Ref, qty = 1) {
     const lines = [...read()];
-    const i = lines.findIndex((l) => l.productId === productId);
-    if (i >= 0) lines[i] = { productId, qty: Math.min(lines[i]!.qty + qty, MAX_QTY) };
-    else if (lines.length < MAX_CART_LINES) lines.push({ productId, qty: Math.min(qty, MAX_QTY) });
+    const i = lines.findIndex((l) => same(l, ref));
+    if (i >= 0) lines[i] = { ...lines[i]!, qty: Math.min(lines[i]!.qty + qty, MAX_QTY) };
+    else if (lines.length < MAX_CART_LINES)
+      lines.push({
+        productId: ref.productId,
+        variantId: ref.variantId,
+        qty: Math.min(qty, MAX_QTY),
+      });
     write(lines);
   },
-  setQty(productId: number, qty: number) {
+  setQty(ref: Ref, qty: number) {
     write(
       read()
-        .map((l) => (l.productId === productId ? { productId, qty: Math.min(qty, MAX_QTY) } : l))
+        .map((l) => (same(l, ref) ? { ...l, qty: Math.min(qty, MAX_QTY) } : l))
         .filter((l) => l.qty > 0),
     );
   },
-  remove(productId: number) {
-    write(read().filter((l) => l.productId !== productId));
+  remove(ref: Ref) {
+    write(read().filter((l) => !same(l, ref)));
   },
-  // Drops products the server no longer sells.
-  keepOnly(ids: Set<number>) {
+  // Drops lines the server no longer sells.
+  keepOnly(keys: Set<string>) {
     const lines = read();
-    const kept = lines.filter((l) => ids.has(l.productId));
+    const kept = lines.filter((l) => keys.has(lineKey(l)));
     if (kept.length !== lines.length) write(kept);
   },
   clear() {

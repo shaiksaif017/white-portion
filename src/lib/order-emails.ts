@@ -18,14 +18,22 @@ export function orderUrl(siteUrl: string, o: { orderNumber: string }, token: str
 }
 
 function itemLines(o: OrderRecord): string[] {
-  return o.items.map((i) => `${i.qty} x ${i.name} - ${formatINR(i.unitPaise * i.qty)}`);
+  return o.items.map((i) => `${i.qty} x ${itemName(i)} - ${formatINR(i.unitPaise * i.qty)}`);
+}
+
+function itemName(i: OrderRecord["items"][number]): string {
+  return i.variantName ? `${i.name} (${i.variantName})` : i.name;
 }
 
 function totalsLines(o: OrderRecord): string[] {
   return [
     `Subtotal: ${formatINR(o.subtotalPaise)}`,
+    ...(o.discountPaise
+      ? [`Discount${o.couponCode ? ` (${o.couponCode})` : ""}: -${formatINR(o.discountPaise)}`]
+      : []),
     ...(o.address ? [`Shipping: ${o.shippingPaise ? formatINR(o.shippingPaise) : "Free"}`] : []),
     `Total paid: ${formatINR(o.totalPaise)}`,
+    ...(o.taxPaise ? [`(includes GST of ${formatINR(o.taxPaise)})`] : []),
   ];
 }
 
@@ -58,11 +66,12 @@ function itemsTable(o: OrderRecord): string {
   const row = (k: string, v: string, bold = false, top = true) =>
     `<tr><td style="padding:10px 14px;${top ? "border-top:1px solid #e6e1d6;" : ""}">${k}</td><td align="right" style="padding:10px 14px;white-space:nowrap;${bold ? "font-weight:bold;" : ""}${top ? "border-top:1px solid #e6e1d6;" : ""}">${v}</td></tr>`;
   return `<table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="border:1px solid #e6e1d6;border-radius:6px;font-size:14px;">
-${o.items.map((i, n) => row(`${i.qty} &times; ${esc(i.name)}`, esc(formatINR(i.unitPaise * i.qty)), false, n > 0)).join("\n")}
+${o.items.map((i, n) => row(`${i.qty} &times; ${esc(itemName(i))}`, esc(formatINR(i.unitPaise * i.qty)), false, n > 0)).join("\n")}
 ${row("Subtotal", esc(formatINR(o.subtotalPaise)))}
+${o.discountPaise ? row(`Discount${o.couponCode ? ` (${esc(o.couponCode)})` : ""}`, `&minus;${esc(formatINR(o.discountPaise))}`) : ""}
 ${o.address ? row("Shipping", o.shippingPaise ? esc(formatINR(o.shippingPaise)) : "Free") : ""}
 ${row("<strong>Total paid</strong>", esc(formatINR(o.totalPaise)), true)}
-</table>`;
+</table>${o.taxPaise ? `<p style="margin:6px 0 0;font-size:12px;color:#77736a;">Includes GST of ${esc(formatINR(o.taxPaise))}.</p>` : ""}`;
 }
 
 export function buildOrderConfirmation(o: OrderRecord, link: string): EmailMessage {

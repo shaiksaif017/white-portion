@@ -8,11 +8,14 @@ import {
   type ProductCategory,
   type ProductDetail,
   type ProductInput,
+  type ProductQuery,
   type ProductSummary,
   DEFAULT_CATEGORIES,
+  PRODUCT_SORTS,
 } from "@/lib/shop-types";
 import { isAdminRequest } from "@/server/admin-session";
 import * as catalogue from "@/server/catalogue";
+import * as sampleData from "@/server/sample-data";
 import { isDbConfigured } from "@/server/db";
 
 type Fail = { ok: false; error: string };
@@ -68,8 +71,43 @@ export const getShopCategories = createServerFn({ method: "GET" }).handler(
 
 const slugParam = z.string().regex(/^[a-z0-9-]{1,120}$/);
 
+// Search / sort / filter options from the page address (?q=&sort=&stock=1&min=&max=).
+export const ProductQuerySchema = z.object({
+  q: z.string().trim().max(80).optional(),
+  sort: z.enum(PRODUCT_SORTS as [string, ...string[]]).optional(),
+  inStock: z.boolean().optional(),
+  minRupees: z.number().min(0).max(10_000_000).optional(),
+  maxRupees: z.number().min(0).max(10_000_000).optional(),
+});
+
+export const searchProducts = createServerFn({ method: "GET" })
+  .inputValidator((d: unknown) => ProductQuerySchema.parse(d))
+  .handler(async ({ data }): Promise<{ products: ProductSummary[] }> => {
+    if (!isDbConfigured()) return { products: [] };
+    try {
+      return { products: await catalogue.listProducts(null, data as ProductQuery, 60) };
+    } catch (error) {
+      console.error("[shop] search failed", error);
+      return { products: [] };
+    }
+  });
+
+export const getFeaturedProducts = createServerFn({ method: "GET" }).handler(
+  async (): Promise<{ products: ProductSummary[] }> => {
+    if (!isDbConfigured()) return { products: [] };
+    try {
+      return { products: await catalogue.listFeaturedProducts(8) };
+    } catch (error) {
+      console.error("[shop] featured failed", error);
+      return { products: [] };
+    }
+  },
+);
+
 export const getCategoryPage = createServerFn({ method: "GET" })
-  .inputValidator((d: unknown) => z.object({ slug: slugParam, sub: slugParam.optional() }).parse(d))
+  .inputValidator((d: unknown) =>
+    z.object({ slug: slugParam, sub: slugParam.optional() }).merge(ProductQuerySchema).parse(d),
+  )
   .handler(
     async ({
       data,
@@ -94,7 +132,8 @@ export const getCategoryPage = createServerFn({ method: "GET" })
       if (isDbConfigured()) {
         try {
           const ids = activeSub ? [activeSub.id] : [category.id, ...subcategories.map((s) => s.id)];
-          products = await catalogue.listProductsInCategories(ids);
+          const { slug: _s, sub: _u, ...query } = data;
+          products = await catalogue.listProducts(ids, query as ProductQuery);
         } catch (error) {
           console.error("[shop] products unavailable", error);
         }
@@ -188,3 +227,46 @@ export const adminDeleteCategory = createServerFn({ method: "POST" })
       return { ok: false, error: "Could not delete the category." };
     }
   });
+
+// ---------- admin: sample data ----------
+
+export const adminSampleStatus = createServerFn({ method: "GET" }).handler(
+  async (): Promise<
+    { ok: true; counts: { products: number; orders: number; coupons: number } } | Fail
+  > => {
+    if (!isAdminRequest()) return unauthorized;
+    try {
+      return { ok: true, counts: await sampleData.sampleCounts() };
+    } catch (error) {
+      console.error("[admin] sample status failed", error);
+      return { ok: false, error: "Could not check sample data." };
+    }
+  },
+);
+
+export const adminLoadSampleData = createServerFn({ method: "POST" }).handler(
+  async (): Promise<{ ok: true; products: number; orders: number; coupons: number } | Fail> => {
+    if (!isAdminRequest()) return unauthorized;
+    try {
+      return await sampleData.loadSampleData();
+    } catch (error) {
+      console.error("[admin] load sample data failed", error);
+      return {
+        ok: false,
+        error: "Could not load all sample data. Use “Remove sample data” and try again.",
+      };
+    }
+  },
+);
+
+export const adminRemoveSampleData = createServerFn({ method: "POST" }).handler(
+  async (): Promise<{ ok: true; products: number; orders: number; coupons: number } | Fail> => {
+    if (!isAdminRequest()) return unauthorized;
+    try {
+      return { ok: true, ...(await sampleData.removeSampleData()) };
+    } catch (error) {
+      console.error("[admin] remove sample data failed", error);
+      return { ok: false, error: "Could not remove sample data." };
+    }
+  },
+);

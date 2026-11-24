@@ -2,41 +2,49 @@
 import { useEffect, useMemo, useState } from "react";
 
 import { cart, useCart } from "@/lib/cart";
-import { getCartProducts } from "@/lib/order-api";
-import { type CartProduct, type ShopSettings, computeTotals } from "@/lib/order-types";
+import { getCartItems } from "@/lib/order-api";
+import {
+  type CartItemInfo,
+  type ShopSettings,
+  type Totals,
+  computeTotals,
+  lineKey,
+} from "@/lib/order-types";
 import { formatINR } from "@/lib/shop-types";
 
 export interface CartRow {
-  product: CartProduct;
+  item: CartItemInfo;
   qty: number;
   problem: string | null; // why this line can't be bought right now
 }
 
 export function useCartDetails(settings: ShopSettings) {
   const lines = useCart();
-  const [products, setProducts] = useState<Map<number, CartProduct> | null>(null);
+  const [items, setItems] = useState<Map<string, CartItemInfo> | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const idsKey = lines
-    .map((l) => l.productId)
-    .sort((a, b) => a - b)
-    .join(",");
+  const linesKey = lines.map(lineKey).sort().join(",");
 
   useEffect(() => {
     let cancelled = false;
-    const ids = idsKey ? idsKey.split(",").map(Number) : [];
-    if (ids.length === 0) {
-      setProducts(new Map());
+    const refs = linesKey
+      ? linesKey.split(",").map((k) => {
+          const [p, v] = k.split(":").map(Number);
+          return { productId: p!, variantId: v ? v : null, qty: 1 };
+        })
+      : [];
+    if (refs.length === 0) {
+      setItems(new Map());
       return;
     }
-    getCartProducts({ data: { ids } })
+    getCartItems({ data: { lines: refs } })
       .then((res) => {
         if (cancelled) return;
         if (!res.ok) {
           setError(res.error);
           return;
         }
-        const map = new Map(res.products.map((p) => [p.id, p]));
-        setProducts(map);
+        const map = new Map(res.items.map((i) => [lineKey(i), i]));
+        setItems(map);
         setError(null);
         cart.keepOnly(new Set(map.keys())); // drop items no longer sold
       })
@@ -44,28 +52,33 @@ export function useCartDetails(settings: ShopSettings) {
     return () => {
       cancelled = true;
     };
-  }, [idsKey]);
+  }, [linesKey]);
 
   const rows: CartRow[] = useMemo(() => {
-    if (!products) return [];
+    if (!items) return [];
     return lines.flatMap((l) => {
-      const product = products.get(l.productId);
-      if (!product) return [];
-      let problem: string | null = null;
-      if (!product.purchasable) problem = "No longer available to order online";
-      else if (product.stock !== null && l.qty > product.stock)
-        problem = `Only ${product.stock} left in stock`;
-      return [{ product, qty: l.qty, problem }];
+      const item = items.get(lineKey(l));
+      if (!item) return [];
+      let problem: string | null = item.problem;
+      if (!problem && !item.purchasable) problem = "No longer available to order online";
+      else if (!problem && item.stock !== null && l.qty > item.stock)
+        problem = item.stock > 0 ? `Only ${item.stock} left in stock` : "Out of stock";
+      return [{ item, qty: l.qty, problem }];
     });
-  }, [lines, products]);
+  }, [lines, items]);
 
   const totals = computeTotals(
-    rows.map((r) => ({ unitPaise: r.product.pricePaise, qty: r.qty, kind: r.product.kind })),
+    rows.map((r) => ({
+      unitPaise: r.item.pricePaise,
+      qty: r.qty,
+      kind: r.item.kind,
+      gstRateBps: r.item.gstRateBps,
+    })),
     settings,
   );
 
   return {
-    loading: products === null && !error,
+    loading: items === null && !error,
     error,
     rows,
     totals,
@@ -76,13 +89,15 @@ export function useCartDetails(settings: ShopSettings) {
 export function TotalsBlock({
   totals,
   settings,
+  couponCode = null,
 }: {
-  totals: ReturnType<typeof computeTotals>;
+  totals: Totals;
   settings: ShopSettings;
+  couponCode?: string | null;
 }) {
   const remaining =
     totals.shipping && settings.freeShippingFromPaise !== null && totals.shippingPaise > 0
-      ? settings.freeShippingFromPaise - totals.subtotalPaise
+      ? settings.freeShippingFromPaise - (totals.subtotalPaise - totals.discountPaise)
       : 0;
   return (
     <dl className="text-sm divide-y divide-border">
@@ -90,6 +105,12 @@ export function TotalsBlock({
         <dt className="text-muted-foreground">Subtotal</dt>
         <dd className="font-medium text-charcoal">{formatINR(totals.subtotalPaise)}</dd>
       </div>
+      {totals.discountPaise > 0 && (
+        <div className="flex justify-between py-2.5">
+          <dt className="text-primary">Discount{couponCode ? ` (${couponCode})` : ""}</dt>
+          <dd className="font-medium text-primary">−{formatINR(totals.discountPaise)}</dd>
+        </div>
+      )}
       {totals.shipping && (
         <div className="flex justify-between py-2.5">
           <dt className="text-muted-foreground">Shipping</dt>
@@ -102,6 +123,11 @@ export function TotalsBlock({
         <dt className="font-bold text-charcoal">Total</dt>
         <dd className="font-bold text-charcoal text-lg">{formatINR(totals.totalPaise)}</dd>
       </div>
+      {totals.taxPaise > 0 && (
+        <p className="pt-2 text-[11px] text-muted-foreground">
+          Prices include GST of {formatINR(totals.taxPaise)}.
+        </p>
+      )}
       {remaining > 0 && (
         <p className="pt-2.5 text-xs text-primary">
           Add {formatINR(remaining)} more for free shipping.

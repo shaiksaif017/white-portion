@@ -5,10 +5,13 @@ import { z } from "zod";
 
 import { buildOrderStatusUpdate, orderUrl } from "@/lib/order-emails";
 import {
-  type CartProduct,
+  type AdminCoupon,
+  type CartItemInfo,
+  type Totals,
   type OrderRecord,
   type PublicOrder,
   type ShopSettings,
+  type CouponInput,
   CheckoutSchema,
   FULFILMENT_STATUSES,
   MAX_CART_LINES,
@@ -18,6 +21,7 @@ import {
 import { isAdminRequest } from "@/server/admin-session";
 import { rateLimit } from "@/server/auth";
 import * as checkout from "@/server/checkout";
+import * as coupons from "@/server/coupons";
 import { isDbConfigured } from "@/server/db";
 import { siteUrl } from "@/server/env";
 import { sendEmail } from "@/server/mailer";
@@ -71,16 +75,57 @@ export const getShopStatus = createServerFn({ method: "GET" }).handler(
   },
 );
 
-export const getCartProducts = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) =>
-    z.object({ ids: z.array(z.number().int().positive()).max(MAX_CART_LINES) }).parse(d),
+const cartLines = z
+  .array(
+    z.object({
+      productId: z.number().int().positive(),
+      variantId: z.number().int().positive().nullable(),
+      qty: z.number().int().min(1).max(10).default(1),
+    }),
   )
-  .handler(async ({ data }): Promise<{ ok: true; products: CartProduct[] } | Fail> => {
+  .max(MAX_CART_LINES);
+
+export const getCartItems = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => z.object({ lines: cartLines }).parse(d))
+  .handler(async ({ data }): Promise<{ ok: true; items: CartItemInfo[] } | Fail> => {
     if (!isDbConfigured()) return UNAVAILABLE;
     try {
-      return { ok: true, products: await orders.getCartProducts(data.ids) };
+      return { ok: true, items: await orders.getCartItems(data.lines) };
     } catch (error) {
-      console.error("[shop] cart products failed", error);
+      console.error("[shop] cart items failed", error);
+      return UNAVAILABLE;
+    }
+  });
+
+// Checks a coupon against the current cart and returns the totals it would give.
+export const applyCoupon = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) =>
+    z
+      .object({
+        code: z.string().trim().min(1).max(40),
+        lines: cartLines.min(1),
+      })
+      .parse(d),
+  )
+  .handler(async ({ data }): Promise<{ ok: true; code: string; totals: Totals } | Fail> => {
+    if (!isDbConfigured()) return UNAVAILABLE;
+    if (!rateLimit(`coupon:${clientIp()}`, 30, 15 * 60_000)) {
+      return { ok: false, error: "Too many attempts. Please wait a few minutes." };
+    }
+    try {
+      const priced = await orders.priceCart(
+        data.lines,
+        data.code.toUpperCase(),
+        await orders.getShopSettings(),
+      );
+      if (!priced.ok) return priced;
+      return {
+        ok: true,
+        code: priced.coupon?.code ?? data.code.toUpperCase(),
+        totals: priced.totals,
+      };
+    } catch (error) {
+      console.error("[shop] coupon failed", error);
       return UNAVAILABLE;
     }
   });
@@ -357,5 +402,44 @@ export const adminSaveShopSettings = createServerFn({ method: "POST" })
     } catch (error) {
       console.error("[admin] save shop settings failed", error);
       return { ok: false, error: "Could not save shipping settings." };
+    }
+  });
+
+// ---------- admin: coupons ----------
+
+export const adminListCoupons = createServerFn({ method: "GET" }).handler(
+  async (): Promise<{ ok: true; coupons: AdminCoupon[] } | Fail> => {
+    if (!isAdminRequest()) return unauthorized;
+    try {
+      return { ok: true, coupons: await coupons.listCoupons() };
+    } catch (error) {
+      console.error("[admin] coupons failed", error);
+      return { ok: false, error: "Could not load coupons." };
+    }
+  },
+);
+
+export const adminSaveCoupon = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => d)
+  .handler(async ({ data }): Promise<{ ok: true; id: number } | Fail> => {
+    if (!isAdminRequest()) return unauthorized;
+    try {
+      return await coupons.saveCoupon(data as CouponInput);
+    } catch (error) {
+      console.error("[admin] save coupon failed", error);
+      return { ok: false, error: "Could not save the coupon." };
+    }
+  });
+
+export const adminDeleteCoupon = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => z.object({ id: z.number().int().positive() }).parse(d))
+  .handler(async ({ data }): Promise<{ ok: true } | Fail> => {
+    if (!isAdminRequest()) return unauthorized;
+    try {
+      await coupons.deleteCoupon(data.id);
+      return { ok: true };
+    } catch (error) {
+      console.error("[admin] delete coupon failed", error);
+      return { ok: false, error: "Could not delete the coupon." };
     }
   });

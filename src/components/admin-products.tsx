@@ -2,6 +2,8 @@
 import { ArrowDown, ArrowUp, Edit3, ImagePlus, Plus, Trash2, Upload, X } from "lucide-react";
 import { useEffect, useMemo, useState } from "react";
 
+import { AdminCoupons } from "@/components/admin-coupons";
+import { AdminSampleData } from "@/components/admin-sample-data";
 import { Button } from "@/components/ui/button";
 import {
   adminDeleteCategory,
@@ -15,7 +17,9 @@ import {
   type CategoryKind,
   type ProductCategory,
   type ProductStatus,
+  DEFAULT_GST_BPS,
   formatINR,
+  GST_RATES_BPS,
   KIND_LABEL,
 } from "@/lib/shop-types";
 
@@ -39,7 +43,7 @@ async function prepareImage(file: File): Promise<Blob> {
   );
 }
 
-async function upload(kind: "image" | "download", body: Blob, name: string) {
+async function upload(kind: "image" | "download" | "preview", body: Blob, name: string) {
   const res = await fetch(`/api/admin/upload?kind=${kind}&name=${encodeURIComponent(name)}`, {
     method: "POST",
     body,
@@ -68,7 +72,24 @@ interface FormState {
   imageIds: number[];
   digitalFileId: number | null;
   digitalFileName: string | null;
+  sku: string;
+  isFeatured: boolean;
+  gstRateBps: number | null; // null = default for the category type
+  previewFileId: number | null;
+  previewFileName: string | null;
+  variants: VariantForm[];
 }
+
+interface VariantForm {
+  id?: number;
+  name: string;
+  sku: string;
+  price: string;
+  compareAt: string;
+  stock: string;
+}
+
+const emptyVariant: VariantForm = { name: "", sku: "", price: "", compareAt: "", stock: "" };
 
 const emptyForm: FormState = {
   name: "",
@@ -86,6 +107,12 @@ const emptyForm: FormState = {
   imageIds: [],
   digitalFileId: null,
   digitalFileName: null,
+  sku: "",
+  isFeatured: false,
+  gstRateBps: null,
+  previewFileId: null,
+  previewFileName: null,
+  variants: [],
 };
 
 function toForm(p: AdminProduct): FormState {
@@ -106,8 +133,23 @@ function toForm(p: AdminProduct): FormState {
     imageIds: p.imageIds,
     digitalFileId: p.digitalFileId,
     digitalFileName: p.digitalFileName,
+    sku: p.sku ?? "",
+    isFeatured: p.isFeatured,
+    gstRateBps: p.gstRateBps,
+    previewFileId: p.previewFileId,
+    previewFileName: p.previewFileName,
+    variants: p.variants.map((v) => ({
+      ...(v.id ? { id: v.id } : {}),
+      name: v.name,
+      sku: v.sku ?? "",
+      price: String(v.pricePaise / 100),
+      compareAt: v.compareAtPaise === null ? "" : String(v.compareAtPaise / 100),
+      stock: v.stock === null ? "" : String(v.stock),
+    })),
   };
 }
+
+const num = (v: string) => (v.trim() === "" ? null : Number(v));
 
 export function AdminProducts({ onSessionExpired }: { onSessionExpired: (msg: string) => void }) {
   const [categories, setCategories] = useState<ProductCategory[]>([]);
@@ -120,6 +162,7 @@ export function AdminProducts({ onSessionExpired }: { onSessionExpired: (msg: st
   const [filterStatus, setFilterStatus] = useState<ProductStatus | "all">("all");
   const [search, setSearch] = useState("");
   const [showCategories, setShowCategories] = useState(false);
+  const [panel, setPanel] = useState<"none" | "coupons" | "sample">("none");
 
   function fail(msg: string) {
     if (/session has expired/i.test(msg)) onSessionExpired(msg);
@@ -179,6 +222,18 @@ export function AdminProducts({ onSessionExpired }: { onSessionExpired: (msg: st
           requiresPrescription: form.requiresPrescription,
           imageIds: form.imageIds,
           digitalFileId: form.digitalFileId,
+          sku: form.sku,
+          isFeatured: form.isFeatured,
+          ...(form.gstRateBps !== null ? { gstRateBps: form.gstRateBps } : {}),
+          previewFileId: form.previewFileId,
+          variants: form.variants.map((v) => ({
+            ...(v.id ? { id: v.id } : {}),
+            name: v.name,
+            sku: v.sku,
+            priceRupees: Number(v.price || 0),
+            compareAtRupees: num(v.compareAt),
+            stock: num(v.stock),
+          })),
         },
       });
       if (!res.ok) return fail(res.error);
@@ -238,6 +293,25 @@ export function AdminProducts({ onSessionExpired }: { onSessionExpired: (msg: st
     }
   }
 
+  async function handlePreviewFile(file: File | undefined) {
+    if (!file || !form) return;
+    setBusy(true);
+    try {
+      const res = await upload("preview", file, file.name);
+      setForm((f) => (f ? { ...f, previewFileId: res.id, previewFileName: res.name } : f));
+    } catch (err) {
+      fail(err instanceof Error ? err.message : "Upload failed.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function setVariant(i: number, patch: Partial<VariantForm>) {
+    setForm((f) =>
+      f ? { ...f, variants: f.variants.map((v, j) => (j === i ? { ...v, ...patch } : v)) } : f,
+    );
+  }
+
   function moveImage(i: number, dir: -1 | 1) {
     setForm((f) => {
       if (!f) return f;
@@ -260,7 +334,23 @@ export function AdminProducts({ onSessionExpired }: { onSessionExpired: (msg: st
             Only products with status <strong>Active</strong> appear on the website.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            className="text-xs"
+            onClick={() => setPanel((v) => (v === "coupons" ? "none" : "coupons"))}
+          >
+            {panel === "coupons" ? "Hide coupons" : "Coupons"}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="text-xs"
+            onClick={() => setPanel((v) => (v === "sample" ? "none" : "sample"))}
+          >
+            {panel === "sample" ? "Hide sample data" : "Sample data"}
+          </Button>
           <Button
             type="button"
             variant="outline"
@@ -295,6 +385,16 @@ export function AdminProducts({ onSessionExpired }: { onSessionExpired: (msg: st
       )}
 
       {showCategories && <CategoryManager categories={categories} onChanged={load} fail={fail} />}
+      {panel === "coupons" && <AdminCoupons fail={fail} />}
+      {panel === "sample" && (
+        <AdminSampleData
+          fail={fail}
+          onChanged={(msg) => {
+            setNotice(msg);
+            void load();
+          }}
+        />
+      )}
 
       {/* Filters */}
       <div className="flex flex-wrap gap-2">
@@ -367,14 +467,36 @@ export function AdminProducts({ onSessionExpired }: { onSessionExpired: (msg: st
                           )}
                         </div>
                         <div>
-                          <div className="font-semibold text-charcoal">{p.name}</div>
-                          <div className="text-[10px] text-muted-foreground">/product/{p.slug}</div>
+                          <div className="font-semibold text-charcoal">
+                            {p.name}
+                            {p.isFeatured && (
+                              <span className="ml-2 px-1.5 py-0.5 rounded bg-primary/15 text-primary text-[9px] font-bold">
+                                FEATURED
+                              </span>
+                            )}
+                            {p.isSample && (
+                              <span className="ml-2 px-1.5 py-0.5 rounded bg-gold-accent/40 text-charcoal text-[9px] font-bold">
+                                SAMPLE
+                              </span>
+                            )}
+                          </div>
+                          <div className="text-[10px] text-muted-foreground">
+                            /product/{p.slug}
+                            {p.sku && <> · SKU {p.sku}</>}
+                            {p.variants.length > 0 && <> · {p.variants.length} options</>}
+                          </div>
                         </div>
                       </div>
                     </td>
                     <td className="py-3 px-4 text-muted-foreground">{c?.name ?? "—"}</td>
-                    <td className="py-3 px-4">{formatINR(p.pricePaise)}</td>
-                    <td className="py-3 px-4">{p.stock === null ? "—" : p.stock}</td>
+                    <td className="py-3 px-4">
+                      {p.variants.length > 0
+                        ? `from ${formatINR(Math.min(...p.variants.map((v) => v.pricePaise)))}`
+                        : formatINR(p.pricePaise)}
+                    </td>
+                    <td className="py-3 px-4">
+                      <StockCell product={p} />
+                    </td>
                     <td className="py-3 px-4">
                       <span
                         className={`px-2 py-0.5 rounded text-[10px] font-bold ${
@@ -544,7 +666,61 @@ export function AdminProducts({ onSessionExpired }: { onSessionExpired: (msg: st
                   onChange={(e) => setForm({ ...form, slug: e.target.value })}
                 />
               </div>
+              <div>
+                <label className={label}>SKU (optional)</label>
+                <input
+                  className={`${input} uppercase`}
+                  maxLength={64}
+                  placeholder="e.g. WP-WHEY-1KG"
+                  value={form.sku}
+                  onChange={(e) => setForm({ ...form, sku: e.target.value })}
+                />
+              </div>
+              <div>
+                <label className={label}>GST rate (included in the price)</label>
+                <select
+                  className={input}
+                  value={form.gstRateBps ?? (kind ? DEFAULT_GST_BPS[kind] : 1800)}
+                  onChange={(e) => setForm({ ...form, gstRateBps: Number(e.target.value) })}
+                >
+                  {GST_RATES_BPS.map((r) => (
+                    <option key={r} value={r}>
+                      {r / 100}%
+                    </option>
+                  ))}
+                </select>
+                <p className="text-[10px] text-muted-foreground mt-1">
+                  Check the correct rate for each product with your accountant.
+                </p>
+              </div>
+              <label className="md:col-span-2 flex items-center gap-2 text-xs font-bold text-charcoal">
+                <input
+                  type="checkbox"
+                  checked={form.isFeatured}
+                  onChange={(e) => setForm({ ...form, isFeatured: e.target.checked })}
+                />
+                Featured: show first in listings and on the Products page
+              </label>
             </div>
+
+            {kind !== "ebook" && kind !== "course" && (
+              <VariantsEditor
+                variants={form.variants}
+                onAdd={() =>
+                  setForm({
+                    ...form,
+                    variants: [
+                      ...form.variants,
+                      { ...emptyVariant, price: form.price, stock: form.stock },
+                    ],
+                  })
+                }
+                onChange={setVariant}
+                onRemove={(i) =>
+                  setForm({ ...form, variants: form.variants.filter((_, j) => j !== i) })
+                }
+              />
+            )}
 
             {kind === "pharma" && (
               <div className="p-3 rounded border border-border bg-secondary/40 space-y-2 text-xs">
@@ -684,6 +860,47 @@ export function AdminProducts({ onSessionExpired }: { onSessionExpired: (msg: st
                       onChange={(e) => void handleDownloadFile(e.target.files?.[0])}
                     />
                   </label>
+                </div>
+              </div>
+            )}
+            {kind === "ebook" && (
+              <div>
+                <label className={label}>
+                  Free preview (PDF, optional): anyone can read it, e.g. the first chapter
+                </label>
+                <div className="flex items-center gap-3 text-xs">
+                  {form.previewFileName ? (
+                    <a
+                      href={`/media/${form.previewFileId}`}
+                      target="_blank"
+                      rel="noopener"
+                      className="font-semibold text-primary underline"
+                    >
+                      {form.previewFileName}
+                    </a>
+                  ) : (
+                    <span className="text-muted-foreground">No preview</span>
+                  )}
+                  <label className="inline-flex items-center gap-1 px-3 py-2 rounded border border-border cursor-pointer hover:border-primary">
+                    <Upload className="w-3.5 h-3.5" /> {form.previewFileName ? "Replace" : "Upload"}
+                    <input
+                      type="file"
+                      accept=".pdf"
+                      className="hidden"
+                      onChange={(e) => void handlePreviewFile(e.target.files?.[0])}
+                    />
+                  </label>
+                  {form.previewFileName && (
+                    <button
+                      type="button"
+                      className="text-muted-foreground hover:text-destructive"
+                      onClick={() =>
+                        setForm({ ...form, previewFileId: null, previewFileName: null })
+                      }
+                    >
+                      Remove
+                    </button>
+                  )}
                 </div>
               </div>
             )}
@@ -922,6 +1139,116 @@ function CategoryRow({
           <Trash2 className="w-3.5 h-3.5" />
         </button>
       </span>
+    </div>
+  );
+}
+
+function StockCell({ product: p }: { product: AdminProduct }) {
+  const stock =
+    p.variants.length > 0
+      ? p.variants.some((v) => v.stock === null)
+        ? null
+        : p.variants.reduce((n, v) => n + (v.stock ?? 0), 0)
+      : p.stock;
+  if (stock === null) return <>—</>;
+  return (
+    <span className={stock <= 5 ? "font-bold text-destructive" : ""}>
+      {stock}
+      {stock <= 5 && " · low"}
+    </span>
+  );
+}
+
+function VariantsEditor({
+  variants,
+  onAdd,
+  onChange,
+  onRemove,
+}: {
+  variants: VariantForm[];
+  onAdd: () => void;
+  onChange: (i: number, patch: Partial<VariantForm>) => void;
+  onRemove: (i: number) => void;
+}) {
+  return (
+    <div className="space-y-2">
+      <div className="flex items-center justify-between">
+        <span className={label}>Options / variants (e.g. size or flavour), optional</span>
+        <button
+          type="button"
+          className="text-xs font-semibold text-primary inline-flex items-center gap-1"
+          onClick={onAdd}
+        >
+          <Plus className="w-3.5 h-3.5" /> Add option
+        </button>
+      </div>
+      {variants.length > 0 && (
+        <>
+          <p className="text-[10px] text-muted-foreground">
+            When a product has options, customers must choose one. Each option has its own price and
+            stock; the product price above is then not used.
+          </p>
+          {variants.map((v, i) => (
+            <div
+              key={v.id ?? `new-${i}`}
+              className="grid grid-cols-2 md:grid-cols-[2fr_1.3fr_1fr_1fr_1fr_auto] gap-2 items-center"
+            >
+              <input
+                className={input}
+                aria-label="Option name"
+                placeholder="1 kg / Chocolate"
+                value={v.name}
+                onChange={(e) => onChange(i, { name: e.target.value })}
+              />
+              <input
+                className={`${input} uppercase`}
+                aria-label="Option SKU"
+                placeholder="SKU"
+                value={v.sku}
+                onChange={(e) => onChange(i, { sku: e.target.value })}
+              />
+              <input
+                className={input}
+                aria-label="Option price in rupees"
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="Price ₹"
+                value={v.price}
+                onChange={(e) => onChange(i, { price: e.target.value })}
+              />
+              <input
+                className={input}
+                aria-label="Option was-price in rupees"
+                type="number"
+                min="0"
+                step="0.01"
+                placeholder="Was ₹"
+                value={v.compareAt}
+                onChange={(e) => onChange(i, { compareAt: e.target.value })}
+              />
+              <input
+                className={input}
+                aria-label="Option stock"
+                type="number"
+                min="0"
+                step="1"
+                placeholder="Stock"
+                value={v.stock}
+                onChange={(e) => onChange(i, { stock: e.target.value })}
+              />
+              <button
+                type="button"
+                aria-label="Remove option"
+                className="p-1.5 text-muted-foreground hover:text-destructive justify-self-start"
+                onClick={() => onRemove(i)}
+              >
+                <Trash2 className="w-4 h-4" />
+              </button>
+            </div>
+          ))}
+        </>
+      )}
     </div>
   );
 }
