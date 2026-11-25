@@ -303,6 +303,10 @@ const SCHEMA: string[] = [
     KEY idx_audit_time (created_at),
     KEY idx_audit_action (action)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+  `CREATE TABLE IF NOT EXISTS audit_chain (
+    id TINYINT NOT NULL PRIMARY KEY,
+    head CHAR(64) NOT NULL DEFAULT ''
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
   `CREATE TABLE IF NOT EXISTS rate_limits (
     bucket CHAR(64) NOT NULL PRIMARY KEY,
     window_start BIGINT NOT NULL,
@@ -336,6 +340,8 @@ const COLUMNS: [table: string, column: string, definition: string][] = [
   ["products", "course_instructor_bio", "TEXT NULL"],
   ["products", "course_duration", "VARCHAR(60) NOT NULL DEFAULT ''"],
   ["products", "course_level", "VARCHAR(40) NOT NULL DEFAULT ''"],
+  ["admin_users", "last_seen_at", "DATETIME NULL"],
+  ["audit_log", "chain_hash", "CHAR(64) NULL"],
 ];
 
 const INDEXES: [table: string, name: string, definition: string][] = [

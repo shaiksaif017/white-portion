@@ -41,6 +41,9 @@ export const Route = createFileRoute("/api/lesson-file")({
               "content-disposition": `attachment; filename="${safeName}"`,
               "cache-control": "private, no-store",
               "x-content-type-options": "nosniff",
+              // even if a browser ignores "attachment", nothing in the file can run
+              "content-security-policy": "default-src 'none'; sandbox",
+              "cross-origin-resource-policy": "same-origin",
             },
           });
         } catch (error) {

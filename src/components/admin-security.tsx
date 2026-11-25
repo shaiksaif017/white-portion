@@ -1,5 +1,5 @@
 // Admin > Security: your own password / recovery codes / sessions, and (Owner) the audit log.
-import { Download, RefreshCw } from "lucide-react";
+import { Download, RefreshCw, ShieldCheck } from "lucide-react";
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -7,6 +7,7 @@ import {
   adminChangePassword,
   adminExportAudit,
   adminListAudit,
+  adminVerifyAudit,
   adminNewRecoveryCodes,
   adminSignOutEverywhere,
 } from "@/lib/admin-auth-api";
@@ -213,6 +214,23 @@ function AuditLog({ fail }: { fail: (msg: string) => void }) {
     // eslint-disable-next-line react-hooks/exhaustive-deps -- reload on filter change
   }, [severity]);
 
+  const [integrity, setIntegrity] = useState<string | null>(null);
+  async function verify() {
+    setIntegrity("Checking…");
+    try {
+      const r = await adminVerifyAudit();
+      if (!r.ok) return setIntegrity(r.error);
+      const c = r.check;
+      setIntegrity(
+        c.ok
+          ? `Intact: all ${c.checked} sealed entries check out${c.unsealed ? ` (${c.unsealed} older entries were recorded before sealing started)` : ""}.`
+          : `WARNING: the log was changed outside the website${c.firstBadId ? `, starting at entry #${c.firstBadId}` : " (newest entries removed)"}. The owners have been emailed.`,
+      );
+    } catch {
+      setIntegrity("Could not reach the server.");
+    }
+  }
+
   async function exportCsv() {
     const r = await adminExportAudit({
       data: { ...(q ? { q } : {}), ...(severity ? { severity } : {}) },
@@ -272,8 +290,19 @@ function AuditLog({ fail }: { fail: (msg: string) => void }) {
           >
             <Download className="w-3.5 h-3.5 mr-1" /> CSV
           </Button>
+          <Button type="button" variant="outline" className="text-xs" onClick={() => void verify()}>
+            <ShieldCheck className="w-3.5 h-3.5 mr-1" /> Check integrity
+          </Button>
         </form>
       </div>
+      {integrity && (
+        <p
+          role="status"
+          className={`text-xs ${integrity.startsWith("WARNING") ? "text-destructive font-semibold" : "text-muted-foreground"}`}
+        >
+          {integrity}
+        </p>
+      )}
       {entries === null ? (
         <p className="text-muted-foreground">Loading…</p>
       ) : entries.length === 0 ? (

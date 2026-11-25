@@ -17,7 +17,7 @@ describe.skipIf(!enabled)("admin security against a real database", async () => 
 
   beforeAll(async () => {
     const db = await getDb();
-    for (const t of ["admin_recovery_codes", "admin_tokens", "admin_users", "audit_log"])
+    for (const t of ["admin_recovery_codes", "admin_tokens", "admin_users", "audit_log", "audit_chain"])
       await db.query(`DELETE FROM ${t}`);
   });
   afterAll(async () => {

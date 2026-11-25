@@ -16,7 +16,14 @@ import {
 import { brand } from "@/lib/brand";
 import * as users from "@/server/admin-users";
 import { adminFor, readAdminSession, SESSION_EXPIRED } from "@/server/admin-session";
-import { audit, auditToCsv, listAudit, securityAlert } from "@/server/audit";
+import {
+  audit,
+  type AuditCheck,
+  auditToCsv,
+  listAudit,
+  securityAlert,
+  verifyAuditChain,
+} from "@/server/audit";
 import { rateLimit, resetRateLimit, SESSION_COOKIE, verifyPassword } from "@/server/auth";
 import { getDashboardStats } from "@/server/dashboard";
 import { throttle } from "@/server/throttle";
@@ -543,6 +550,36 @@ export const adminListAudit = createServerFn({ method: "GET" })
     if (!admin.ok) return admin;
     return { ok: true, entries: await listAudit({ ...data, limit: 500 }) };
   });
+
+// Re-checks every sealed audit entry; any change made directly in the database shows up.
+export const adminVerifyAudit = createServerFn({ method: "POST" }).handler(
+  async (): Promise<{ ok: true; check: AuditCheck } | Fail> => {
+    const admin = await adminFor("audit");
+    if (!admin.ok) return admin;
+    if (!rateLimit(`audit-verify:${admin.user.id}`, 10, 15 * 60_000)) {
+      return { ok: false, error: "Please wait a few minutes before checking again." };
+    }
+    const check = await verifyAuditChain();
+    if (!check.ok) {
+      await audit(
+        admin.actor,
+        "audit.tamper_detected",
+        String(check.firstBadId ?? "head"),
+        { ...check },
+        "alert",
+      );
+      void securityAlert("Audit log integrity check failed", [
+        `${admin.user.email} ran the audit log check and it found entries that were changed or removed outside the website.`,
+        check.firstBadId
+          ? `First affected entry: #${check.firstBadId}`
+          : "The newest entries appear to have been removed.",
+      ]);
+    } else {
+      await admin.log("audit.verified", "", { checked: check.checked });
+    }
+    return { ok: true, check };
+  },
+);
 
 export const adminExportAudit = createServerFn({ method: "GET" })
   .inputValidator((d: unknown) => AuditQuery.parse(d))

@@ -164,9 +164,37 @@ export async function checkPassword(email: string, password: string): Promise<Pa
 export async function recordLogin(userId: number): Promise<void> {
   const db = await getDb();
   await db.query(
-    "UPDATE admin_users SET failed_attempts = 0, locked_until = NULL, last_login_at = UTC_TIMESTAMP() WHERE id = ?",
+    "UPDATE admin_users SET failed_attempts = 0, locked_until = NULL, last_login_at = UTC_TIMESTAMP(), last_seen_at = UTC_TIMESTAMP() WHERE id = ?",
     [userId],
   );
+}
+
+// Admins are signed out after this long without doing anything (on every device).
+export const ADMIN_IDLE_MINUTES = 60;
+
+// Records activity for a signed-in admin. Returns false when the account has been idle
+// too long: then every session for it is ended (session_version bump), so an
+// unattended, signed-in computer can't be used later.
+export async function touchAdmin(userId: number, version: number): Promise<boolean> {
+  const db = await getDb();
+  const [rows] = await db.query<RowDataPacket[]>(
+    "SELECT TIMESTAMPDIFF(SECOND, last_seen_at, UTC_TIMESTAMP()) AS idle FROM admin_users WHERE id = ?",
+    [userId],
+  );
+  const raw = rows[0]?.["idle"];
+  const idle = raw === null || raw === undefined ? null : Number(raw);
+  if (idle !== null && idle > ADMIN_IDLE_MINUTES * 60) {
+    await db.query(
+      "UPDATE admin_users SET session_version = session_version + 1, last_seen_at = NULL WHERE id = ? AND session_version = ?",
+      [userId, version],
+    );
+    return false;
+  }
+  // write at most about once a minute
+  if (idle === null || idle >= 60) {
+    await db.query("UPDATE admin_users SET last_seen_at = UTC_TIMESTAMP() WHERE id = ?", [userId]);
+  }
+  return true;
 }
 
 // ---------- second step: a code sent by email (recovery codes as a backup) ----------

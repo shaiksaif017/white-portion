@@ -17,6 +17,7 @@ import {
 } from "@/lib/booking-types";
 import type { NotificationLog } from "@/lib/notifications";
 import { getDb, isDuplicateKeyError } from "./db";
+import { csvCell } from "./csv";
 
 type ParsedBooking = ReturnType<typeof BookingSchema.parse>;
 
@@ -268,13 +269,6 @@ export async function listNotifications(limit = 100): Promise<NotificationLog[]>
 }
 
 // ---------- CSV ----------
-
-function csvCell(value: unknown): string {
-  let s = value === undefined || value === null ? "" : String(value);
-  // Stop spreadsheet apps from treating a cell as a formula.
-  if (/^[=+\-@\t\r]/.test(s)) s = `'${s}`;
-  return `"${s.replace(/"/g, '""')}"`;
-}
 
 export function appointmentsToCsv(appointments: AppointmentRecord[]): string {
   const headers = [

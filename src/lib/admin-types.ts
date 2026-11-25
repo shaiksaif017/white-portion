@@ -48,11 +48,69 @@ export function can(role: AdminRole, perm: Permission): boolean {
 }
 
 export const PASSWORD_RULE = "At least 10 characters";
+// The first thing attackers try: common words with digits/symbols tacked on
+// ("Password@123", "WhitePortion2025!", "qwerty12345").
+const COMMON_PASSWORD_WORDS = new Set([
+  "password",
+  "passw",
+  "pass",
+  "admin",
+  "administrator",
+  "welcome",
+  "qwerty",
+  "qwertyuiop",
+  "asdf",
+  "asdfgh",
+  "zxcvbn",
+  "letmein",
+  "iloveyou",
+  "login",
+  "secret",
+  "master",
+  "monkey",
+  "dragon",
+  "sunshine",
+  "princess",
+  "football",
+  "cricket",
+  "india",
+  "abc",
+  "abcd",
+  "abcdef",
+  "whiteportion",
+  "whiteportionwellness",
+  "portion",
+  "wellness",
+  "nutrition",
+  "fitness",
+  "diet",
+  "health",
+  "owner",
+  "manager",
+  "staff",
+  "test",
+  "default",
+  "changeme",
+  "",
+]);
+
+export function isWeakPassword(p: string): boolean {
+  const lower = p.toLowerCase();
+  const letters = lower.replace(/[^a-z]/g, "");
+  if (COMMON_PASSWORD_WORDS.has(letters)) return true; // e.g. "Admin@12345", "1234567890"
+  if (/^(.)\1+$/.test(p)) return true; // "aaaaaaaaaa"
+  if ("01234567890123456789".includes(lower) || "9876543210987654321".includes(lower)) return true;
+  return new Set(lower).size < 5; // too few different characters
+}
+
 export const PasswordSchema = z
   .string()
   .min(10, "Use at least 10 characters")
   .max(200)
-  .refine((p) => !/^(.)\1+$/.test(p), "Choose a less predictable password");
+  .refine(
+    (p) => !isWeakPassword(p),
+    "That password is too common or easy to guess. Try a short phrase of unrelated words.",
+  );
 
 export const AdminEmailSchema = z.string().trim().toLowerCase().max(254).pipe(z.string().email());
 

@@ -23,6 +23,7 @@ import {
 import { type CategoryKind, availabilityOf } from "@/lib/shop-types";
 import { enrolFromOrder } from "./courses";
 import { getDb, isDuplicateKeyError } from "./db";
+import { csvCell } from "./csv";
 
 type ParsedCheckout = z.output<typeof CheckoutSchema>;
 
@@ -585,12 +586,7 @@ export async function setPaymentStatus(id: number, status: PaymentStatus): Promi
 }
 
 export function ordersToCsv(orders: OrderRecord[]): string {
-  const esc = (v: string | number) => {
-    const s = String(v);
-    // also neutralise spreadsheet formulas
-    const safe = /^[=+\-@]/.test(s) ? `'${s}` : s;
-    return /[",\n]/.test(safe) ? `"${safe.replace(/"/g, '""')}"` : safe;
-  };
+  const esc = csvCell;
   const header = [
     "Order",
     "Date",

@@ -5,7 +5,7 @@
 import { getCookie } from "@tanstack/react-start/server";
 
 import { type Permission, can } from "@/lib/admin-types";
-import { type AdminUser, getUser, parseAdminToken } from "./admin-users";
+import { type AdminUser, getUser, parseAdminToken, touchAdmin } from "./admin-users";
 import { type Actor, audit } from "./audit";
 import { SESSION_COOKIE } from "./auth";
 import { isDbConfigured } from "./db";
@@ -42,6 +42,10 @@ export async function readAdminSession(): Promise<
     const user = await getUser(t.id);
     if (!user || user.sessionVersion !== t.version) return { kind: "none" };
     if (!t.mfa) return { kind: "none" };
+    if (!(await touchAdmin(user.id, user.sessionVersion))) {
+      void audit({ id: user.id, email: user.email }, "session.idle_timeout", user.email);
+      return { kind: "none" };
+    }
     return { kind: "ok", user };
   } catch (error) {
     console.error("[admin] session check failed", error);
