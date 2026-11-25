@@ -1,15 +1,13 @@
-// Admin accounts: email + password, mandatory authenticator-app 2FA, one-time
-// recovery codes, invite / password-reset links, lockout after repeated failures and
+// Admin accounts: email + password, then a 6-digit code sent by email (recovery codes as
+// a backup), lockout after repeated failures, invite / password-reset links and
 // "sign out everywhere" via session_version.
-import { createHash, createHmac, randomBytes, timingSafeEqual } from "node:crypto";
+import { createHash, createHmac, randomBytes, randomInt, timingSafeEqual } from "node:crypto";
 import type { ResultSetHeader, RowDataPacket } from "mysql2/promise";
 
 import { type AdminRole, type AdminUserView, ROLE_PERMISSIONS } from "@/lib/admin-types";
 import { hashPassword, verifyPassword } from "./auth";
 import { getDb, isDuplicateKeyError } from "./db";
 import { authConfig } from "./env";
-import { decryptSecret, encryptSecret } from "./secrets";
-import { currentStep, newTotpSecret, verifyTotp } from "./totp";
 
 export const ADMIN_SESSION_HOURS = 8;
 const MAX_FAILS = 5;
@@ -20,7 +18,6 @@ export interface AdminUser {
   email: string;
   name: string;
   role: AdminRole;
-  mfaEnabled: boolean;
   sessionVersion: number;
 }
 
@@ -44,7 +41,6 @@ function toUser(r: RowDataPacket): AdminUser {
     email: String(r["email"]),
     name: String(r["name"]),
     role: String(r["role"]) as AdminRole,
-    mfaEnabled: r["totp_secret"] !== null,
     sessionVersion: Number(r["session_version"]),
   };
 }
@@ -155,43 +151,50 @@ export async function recordLogin(userId: number): Promise<void> {
   );
 }
 
-// ---------- 2FA ----------
+// ---------- second step: a code sent by email (recovery codes as a backup) ----------
 
-// Accepts a 6-digit authenticator code or an unused recovery code ("abcd-efgh").
+const LOGIN_CODE_MINUTES = 10;
+
+// Creates a fresh 6-digit sign-in code (older unused codes stop working). Only a keyed
+// hash is stored. The caller sends the code; an SMS sender can be plugged in later.
+export async function createLoginCode(userId: number): Promise<string> {
+  const code = String(randomInt(0, 1_000_000)).padStart(6, "0");
+  const db = await getDb();
+  // one live code per person: older ones (used or not) are removed
+  await db.query("DELETE FROM admin_tokens WHERE user_id = ? AND purpose = 'login'", [userId]);
+  await db.query(
+    "INSERT INTO admin_tokens (user_id, purpose, token_hash, expires_at) VALUES (?, 'login', ?, UTC_TIMESTAMP() + INTERVAL ? MINUTE)",
+    [userId, sha(`login|${userId}|${code}`), LOGIN_CODE_MINUTES],
+  );
+  return code;
+}
+
+// Accepts the emailed 6-digit code or an unused recovery code ("abcd-efgh").
 export async function checkSecondFactor(
   userId: number,
   code: string,
 ): Promise<{ ok: true; usedRecovery: boolean } | { ok: false; error: string }> {
   const db = await getDb();
   const [rows] = await db.query<RowDataPacket[]>(
-    `SELECT totp_secret, totp_last_step, failed_attempts,
-       (locked_until IS NOT NULL AND locked_until > UTC_TIMESTAMP()) AS is_locked
+    `SELECT failed_attempts, (locked_until IS NOT NULL AND locked_until > UTC_TIMESTAMP()) AS is_locked
      FROM admin_users WHERE id = ? AND active = 1`,
     [userId],
   );
   const r = rows[0];
-  if (!r || r["totp_secret"] === null) return { ok: false, error: "Please log in again." };
+  if (!r) return { ok: false, error: "Please sign in again." };
   if (Number(r["is_locked"])) {
     return { ok: false, error: `Too many failed attempts. Try again in ${LOCK_MINUTES} minutes.` };
   }
   const clean = code.trim().toLowerCase().replace(/\s/g, "");
 
   if (/^\d{6}$/.test(clean)) {
-    const secret = decryptSecret(String(r["totp_secret"]));
-    if (!secret)
-      return {
-        ok: false,
-        error: "2FA can't be read on this server. Ask the owner to reset your 2FA.",
-      };
-    const step = verifyTotp(secret, clean, Number(r["totp_last_step"]));
-    if (step !== null) {
-      // remember the step so the same code can't be replayed
-      const [res] = await db.query<ResultSetHeader>(
-        "UPDATE admin_users SET totp_last_step = ? WHERE id = ? AND totp_last_step < ?",
-        [step, userId, step],
-      );
-      if (res.affectedRows === 1) return { ok: true, usedRecovery: false };
-    }
+    // single use: only the request that flips used 0 -> 1 succeeds
+    const [res] = await db.query<ResultSetHeader>(
+      `UPDATE admin_tokens SET used = 1
+       WHERE user_id = ? AND purpose = 'login' AND token_hash = ? AND used = 0 AND expires_at > UTC_TIMESTAMP()`,
+      [userId, sha(`login|${userId}|${clean}`)],
+    );
+    if (res.affectedRows === 1) return { ok: true, usedRecovery: false };
   } else if (/^[a-z0-9]{4}-?[a-z0-9]{4}$/.test(clean)) {
     const hash = sha(`recovery|${userId}|${clean.replace("-", "")}`);
     const [res] = await db.query<ResultSetHeader>(
@@ -208,18 +211,8 @@ export async function checkSecondFactor(
   );
   return {
     ok: false,
-    error: "That code isn't right. Use the current code from your authenticator app.",
+    error: "That code isn't right or has expired. Use the newest code from your email.",
   };
-}
-
-export async function startMfaSetup(userId: number): Promise<string> {
-  const secret = newTotpSecret();
-  const db = await getDb();
-  await db.query("UPDATE admin_users SET totp_pending = ? WHERE id = ?", [
-    encryptSecret(secret),
-    userId,
-  ]);
-  return secret;
 }
 
 function newRecoveryCodes(): string[] {
@@ -231,7 +224,8 @@ function newRecoveryCodes(): string[] {
   });
 }
 
-async function storeRecoveryCodes(userId: number): Promise<string[]> {
+// Recovery codes are the backup if the email can't be received.
+export async function regenerateRecoveryCodes(userId: number): Promise<string[]> {
   const codes = newRecoveryCodes();
   const db = await getDb();
   await db.query("DELETE FROM admin_recovery_codes WHERE user_id = ?", [userId]);
@@ -244,37 +238,6 @@ async function storeRecoveryCodes(userId: number): Promise<string[]> {
   return codes;
 }
 
-export async function confirmMfaSetup(
-  userId: number,
-  code: string,
-): Promise<{ ok: true; recoveryCodes: string[] } | { ok: false; error: string }> {
-  const db = await getDb();
-  const [rows] = await db.query<RowDataPacket[]>(
-    "SELECT totp_pending FROM admin_users WHERE id = ? AND active = 1",
-    [userId],
-  );
-  const pending = rows[0]?.["totp_pending"] ? decryptSecret(String(rows[0]["totp_pending"])) : null;
-  if (!pending) return { ok: false, error: "Start the setup again." };
-  const step = verifyTotp(pending, code.trim(), 0);
-  if (step === null) {
-    return {
-      ok: false,
-      error:
-        "That code doesn't match. Check the phone's time is set automatically and try the newest code.",
-    };
-  }
-  await db.query(
-    `UPDATE admin_users SET totp_secret = totp_pending, totp_pending = NULL, totp_last_step = ?,
-       session_version = session_version + 1 WHERE id = ?`,
-    [step, userId],
-  );
-  return { ok: true, recoveryCodes: await storeRecoveryCodes(userId) };
-}
-
-export async function regenerateRecoveryCodes(userId: number): Promise<string[]> {
-  return storeRecoveryCodes(userId);
-}
-
 export async function recoveryCodesLeft(userId: number): Promise<number> {
   const db = await getDb();
   const [rows] = await db.query<RowDataPacket[]>(
@@ -282,16 +245,6 @@ export async function recoveryCodesLeft(userId: number): Promise<number> {
     [userId],
   );
   return Number(rows[0]?.["n"]);
-}
-
-// Owner action for someone who lost their phone: they set 2FA up again at next login.
-export async function resetMfa(userId: number): Promise<void> {
-  const db = await getDb();
-  await db.query(
-    "UPDATE admin_users SET totp_secret = NULL, totp_pending = NULL, totp_last_step = 0, session_version = session_version + 1 WHERE id = ?",
-    [userId],
-  );
-  await db.query("DELETE FROM admin_recovery_codes WHERE user_id = ?", [userId]);
 }
 
 // ---------- invite / reset links ----------
@@ -302,7 +255,10 @@ export async function createLinkToken(
 ): Promise<string> {
   const token = randomBytes(32).toString("base64url");
   const db = await getDb();
-  await db.query("UPDATE admin_tokens SET used = 1 WHERE user_id = ? AND used = 0", [userId]);
+  await db.query(
+    "UPDATE admin_tokens SET used = 1 WHERE user_id = ? AND purpose = ? AND used = 0",
+    [userId, purpose],
+  );
   await db.query(
     "INSERT INTO admin_tokens (user_id, purpose, token_hash, expires_at) VALUES (?, ?, ?, UTC_TIMESTAMP() + INTERVAL ? MINUTE)",
     [userId, purpose, sha(`link|${token}`), purpose === "invite" ? 72 * 60 : 30],
@@ -425,7 +381,6 @@ export async function listUsers(): Promise<AdminUserView[]> {
     name: String(r["name"]),
     role: String(r["role"]) as AdminRole,
     active: Boolean(r["active"]),
-    mfaEnabled: r["totp_secret"] !== null,
     invitePending: Boolean(Number(r["invite_pending"])),
     lastLoginAt: iso(r["last_login_at"]),
     createdAt: iso(r["created_at"]) ?? "",
@@ -477,5 +432,3 @@ export async function signOutEverywhere(id: number): Promise<void> {
 export function permissionsFor(role: AdminRole) {
   return ROLE_PERMISSIONS[role];
 }
-
-export { currentStep };

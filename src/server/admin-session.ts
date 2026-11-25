@@ -1,7 +1,7 @@
 // Shared admin checks for server functions and server routes. Every admin action calls
 // adminFor(permission): it verifies the signed session cookie, that the account is
 // still active with the same session version (so sign-outs and role changes apply
-// at once), that 2FA was completed, and that the role has the permission.
+// at once), that the emailed code was entered, and that the role has the permission.
 import { getCookie } from "@tanstack/react-start/server";
 
 import { type Permission, can } from "@/lib/admin-types";
@@ -32,10 +32,7 @@ export type AdminAuth =
 
 // The signed-in admin, or the session state when not fully signed in.
 export async function readAdminSession(): Promise<
-  | { kind: "none" }
-  | { kind: "bootstrap" }
-  | { kind: "mfa_setup"; user: AdminUser }
-  | { kind: "ok"; user: AdminUser }
+  { kind: "none" } | { kind: "bootstrap" } | { kind: "ok"; user: AdminUser }
 > {
   if (!isDbConfigured()) return { kind: "none" };
   const t = parseAdminToken(getCookie(SESSION_COOKIE));
@@ -44,7 +41,6 @@ export async function readAdminSession(): Promise<
   try {
     const user = await getUser(t.id);
     if (!user || user.sessionVersion !== t.version) return { kind: "none" };
-    if (!user.mfaEnabled) return { kind: "mfa_setup", user };
     if (!t.mfa) return { kind: "none" };
     return { kind: "ok", user };
   } catch (error) {

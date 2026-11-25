@@ -85,7 +85,14 @@ function AdminPage() {
   const [notifications, setNotifications] = useState<NotificationLog[]>([]);
 
   const [activeTab, setActiveTab] = useState<
-    "dashboard" | "bookings" | "settings" | "notifications" | "products" | "orders" | "team" | "security"
+    | "dashboard"
+    | "bookings"
+    | "settings"
+    | "notifications"
+    | "products"
+    | "orders"
+    | "team"
+    | "security"
   >("bookings");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState("");
@@ -214,7 +221,10 @@ function AdminPage() {
       const url = URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = url;
-      link.setAttribute("download", `wpw-appointments-${new Date().toISOString().split("T")[0]}.csv`);
+      link.setAttribute(
+        "download",
+        `wpw-appointments-${new Date().toISOString().split("T")[0]}.csv`,
+      );
       document.body.appendChild(link);
       link.click();
       document.body.removeChild(link);
@@ -307,7 +317,8 @@ function AdminPage() {
             </h1>
             {session.user && (
               <p className="text-xs text-paper-soft mt-1">
-                Signed in as {session.user.name || session.user.email} · {ROLE_LABEL[session.user.role]}
+                Signed in as {session.user.name || session.user.email} ·{" "}
+                {ROLE_LABEL[session.user.role]}
               </p>
             )}
           </div>
@@ -400,56 +411,56 @@ function AdminPage() {
             All Bookings ({appointments.length})
           </button>
           {allowed("booking_settings") && (
-          <button
-            type="button"
-            onClick={() => setActiveTab("settings")}
-            className={`pb-3 cursor-pointer transition-colors flex items-center gap-1.5 ${
-              activeTab === "settings"
-                ? "border-b-2 border-primary text-primary"
-                : "text-muted-foreground hover:text-charcoal"
-            }`}
-          >
-            <Settings className="w-3.5 h-3.5" /> Working Hours & Slot Blocking
-          </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("settings")}
+              className={`pb-3 cursor-pointer transition-colors flex items-center gap-1.5 ${
+                activeTab === "settings"
+                  ? "border-b-2 border-primary text-primary"
+                  : "text-muted-foreground hover:text-charcoal"
+              }`}
+            >
+              <Settings className="w-3.5 h-3.5" /> Working Hours & Slot Blocking
+            </button>
           )}
           {allowed("settings") && (
-          <button
-            type="button"
-            onClick={() => setActiveTab("notifications")}
-            className={`pb-3 cursor-pointer transition-colors flex items-center gap-1.5 ${
-              activeTab === "notifications"
-                ? "border-b-2 border-primary text-primary"
-                : "text-muted-foreground hover:text-charcoal"
-            }`}
-          >
-            <Mail className="w-3.5 h-3.5" /> Email Notification Log ({notifications.length})
-          </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("notifications")}
+              className={`pb-3 cursor-pointer transition-colors flex items-center gap-1.5 ${
+                activeTab === "notifications"
+                  ? "border-b-2 border-primary text-primary"
+                  : "text-muted-foreground hover:text-charcoal"
+              }`}
+            >
+              <Mail className="w-3.5 h-3.5" /> Email Notification Log ({notifications.length})
+            </button>
           )}
           {allowed("products") && (
-          <button
-            type="button"
-            onClick={() => setActiveTab("products")}
-            className={`pb-3 cursor-pointer transition-colors flex items-center gap-1.5 ${
-              activeTab === "products"
-                ? "border-b-2 border-primary text-primary"
-                : "text-muted-foreground hover:text-charcoal"
-            }`}
-          >
-            <Package className="w-3.5 h-3.5" /> Products
-          </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("products")}
+              className={`pb-3 cursor-pointer transition-colors flex items-center gap-1.5 ${
+                activeTab === "products"
+                  ? "border-b-2 border-primary text-primary"
+                  : "text-muted-foreground hover:text-charcoal"
+              }`}
+            >
+              <Package className="w-3.5 h-3.5" /> Products
+            </button>
           )}
           {allowed("orders") && (
-          <button
-            type="button"
-            onClick={() => setActiveTab("orders")}
-            className={`pb-3 cursor-pointer transition-colors flex items-center gap-1.5 ${
-              activeTab === "orders"
-                ? "border-b-2 border-primary text-primary"
-                : "text-muted-foreground hover:text-charcoal"
-            }`}
-          >
-            <ShoppingBag className="w-3.5 h-3.5" /> Orders
-          </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("orders")}
+              className={`pb-3 cursor-pointer transition-colors flex items-center gap-1.5 ${
+                activeTab === "orders"
+                  ? "border-b-2 border-primary text-primary"
+                  : "text-muted-foreground hover:text-charcoal"
+              }`}
+            >
+              <ShoppingBag className="w-3.5 h-3.5" /> Orders
+            </button>
           )}
           {allowed("users") && (
             <button
@@ -464,7 +475,7 @@ function AdminPage() {
               Team
             </button>
           )}
-          {(
+          {
             <button
               type="button"
               onClick={() => setActiveTab("security")}
@@ -476,7 +487,7 @@ function AdminPage() {
             >
               Security
             </button>
-          )}
+          }
         </div>
       </div>
 
@@ -485,6 +496,21 @@ function AdminPage() {
         {actionError && (
           <div className="mb-6 p-3 rounded border border-destructive/40 bg-destructive/10 text-xs text-charcoal">
             {actionError}
+          </div>
+        )}
+        {session.user && session.user.recoveryCodesLeft === 0 && activeTab !== "security" && (
+          <div className="mb-6 p-3 rounded border border-amber-500/40 bg-amber-500/10 text-xs text-charcoal flex flex-wrap items-center justify-between gap-3">
+            <span>
+              Create recovery codes so you can still sign in if the sign-in email ever doesn't
+              arrive.
+            </span>
+            <button
+              type="button"
+              className="font-semibold text-primary underline"
+              onClick={() => setActiveTab("security")}
+            >
+              Go to Security
+            </button>
           </div>
         )}
         {notifyResult && (
@@ -501,10 +527,7 @@ function AdminPage() {
 
         {activeTab === "dashboard" && allowed("dashboard") && (
           <div className="bg-card border border-border p-6 md:p-8 rounded shadow-sm">
-            <AdminDashboard
-              onSessionExpired={handleFailure}
-              goTo={(tab) => setActiveTab(tab)}
-            />
+            <AdminDashboard onSessionExpired={handleFailure} goTo={(tab) => setActiveTab(tab)} />
           </div>
         )}
 
@@ -660,7 +683,9 @@ function AdminPage() {
                                 {apt.booking_status === "Confirmed" &&
                                   customerWhatsAppConfirmationUrl(apt, settings) && (
                                     <a
-                                      href={customerWhatsAppConfirmationUrl(apt, settings) ?? undefined}
+                                      href={
+                                        customerWhatsAppConfirmationUrl(apt, settings) ?? undefined
+                                      }
                                       target="_blank"
                                       rel="noopener noreferrer"
                                       className="px-2 py-1 bg-[#25D366] text-white rounded text-[11px] font-semibold hover:opacity-90"
@@ -783,9 +808,7 @@ function AdminPage() {
                   <input
                     type="text"
                     value={settings.businessLocation}
-                    onChange={(e) =>
-                      setSettings({ ...settings, businessLocation: e.target.value })
-                    }
+                    onChange={(e) => setSettings({ ...settings, businessLocation: e.target.value })}
                     className="w-full p-2.5 rounded border border-border bg-background text-xs"
                   />
                 </div>
@@ -917,7 +940,8 @@ function AdminPage() {
                 Transactional Email Dispatch Log
               </h3>
               <p className="text-xs text-muted-foreground">
-                All client acknowledgement and administrator intake notification events are logged here.
+                All client acknowledgement and administrator intake notification events are logged
+                here.
               </p>
               <form
                 onSubmit={handleSaveEmailPassword}
@@ -927,8 +951,8 @@ function AdminPage() {
                   Email account password (for care@officialwhiteportion.com)
                 </label>
                 <p className="text-[11px] text-muted-foreground">
-                  Type the same password you use at mail.hostinger.com, without "care@" in front. It is
-                  stored encrypted and never shown again.
+                  Type the same password you use at mail.hostinger.com, without "care@" in front. It
+                  is stored encrypted and never shown again.
                 </p>
                 <div className="flex flex-wrap gap-2">
                   <input
@@ -1061,7 +1085,9 @@ function AdminPage() {
               </div>
               <div>
                 <span className="text-muted-foreground block">Format:</span>
-                <span className="font-semibold text-charcoal">{selectedRecord.appointment_type}</span>
+                <span className="font-semibold text-charcoal">
+                  {selectedRecord.appointment_type}
+                </span>
               </div>
               <div>
                 <span className="text-muted-foreground block">Requested Schedule:</span>
@@ -1131,7 +1157,8 @@ function AdminPage() {
                 {customerWhatsAppConfirmationUrl(selectedRecord, settings) ? (
                   <>
                     <p className="text-muted-foreground">
-                      Need to send WhatsApp yourself (for example if the automatic message failed)? The message is pre-written, just tap Send.
+                      Need to send WhatsApp yourself (for example if the automatic message failed)?
+                      The message is pre-written, just tap Send.
                     </p>
                     <a
                       href={customerWhatsAppConfirmationUrl(selectedRecord, settings) ?? undefined}
@@ -1144,7 +1171,8 @@ function AdminPage() {
                   </>
                 ) : (
                   <p className="text-muted-foreground">
-                    The client's phone number doesn't look like a valid WhatsApp number, so please contact them directly.
+                    The client's phone number doesn't look like a valid WhatsApp number, so please
+                    contact them directly.
                   </p>
                 )}
               </div>
@@ -1172,11 +1200,7 @@ function AdminPage() {
                 )}
               </div>
 
-              <Button
-                onClick={() => setSelectedRecord(null)}
-                variant="outline"
-                className="text-xs"
-              >
+              <Button onClick={() => setSelectedRecord(null)} variant="outline" className="text-xs">
                 Close
               </Button>
             </div>

@@ -12,7 +12,7 @@ export type Permission =
   | "products" // catalogue, coupons, courses, students, sample data
   | "dashboard" // sales figures
   | "settings" // payment keys, email password, WhatsApp, shipping
-  | "users" // add/remove admins, roles, 2FA resets
+  | "users" // add/remove admins, roles, sign people out
   | "audit"; // read the audit log
 
 export const ROLE_PERMISSIONS: Record<AdminRole, Permission[]> = {
@@ -58,8 +58,8 @@ export const AdminEmailSchema = z.string().trim().toLowerCase().max(254).pipe(z.
 
 export interface AdminSessionView {
   configured: boolean;
-  // none = log in; bootstrap = first-time owner setup; mfa_setup = must add 2FA; ok = signed in
-  state: "none" | "bootstrap" | "mfa_setup" | "ok";
+  // none = sign in; bootstrap = first-time owner setup; ok = signed in
+  state: "none" | "bootstrap" | "ok";
   user: {
     email: string;
     name: string;
@@ -75,7 +75,6 @@ export interface AdminUserView {
   name: string;
   role: AdminRole;
   active: boolean;
-  mfaEnabled: boolean;
   invitePending: boolean;
   lastLoginAt: string | null;
   createdAt: string;

@@ -65,8 +65,7 @@ function ResetPage() {
           ) : done ? (
             <div className="text-center space-y-4">
               <p className="text-sm text-paper-soft" role="status">
-                Password saved. Sign in now; you'll be asked for your authenticator code (or to set
-                it up).
+                Password saved. Sign in now; we'll email you a 6-digit code to finish signing in.
               </p>
               <Button asChild variant="hero">
                 <Link to="/admin">GO TO SIGN IN</Link>

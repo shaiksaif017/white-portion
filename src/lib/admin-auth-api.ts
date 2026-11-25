@@ -1,4 +1,4 @@
-// Server functions for admin sign-in, 2FA, password reset, team management, the
+// Server functions for admin sign-in (password + emailed code), password reset, team management, the
 // audit log and the sales dashboard.
 import { createServerFn } from "@tanstack/react-start";
 import { deleteCookie, getRequestIP, setCookie } from "@tanstack/react-start/server";
@@ -22,7 +22,6 @@ import { getDashboardStats } from "@/server/dashboard";
 import { isDbConfigured } from "@/server/db";
 import { authConfig, isProduction, siteUrl } from "@/server/env";
 import { sendEmail } from "@/server/mailer";
-import { otpauthUri } from "@/server/totp";
 
 type Fail = { ok: false; error: string };
 const NOT_SET_UP: Fail = {
@@ -67,10 +66,49 @@ export const getAdminSession = createServerFn({ method: "GET" }).handler(
   },
 );
 
-// ---------- sign in ----------
+// ---------- sign in: password, then a 6-digit code sent by email ----------
+
+// Sends the sign-in code. Email today; an SMS provider (e.g. MSG91 / Twilio, after DLT
+// registration) can be added here later without changing the sign-in screens.
+async function sendSignInCode(user: { id: number; email: string; name: string }): Promise<boolean> {
+  const code = await users.createLoginCode(user.id);
+  const first = user.name.split(" ")[0] || "there";
+  const r = await sendEmail(
+    {
+      type: "ADMIN_SECURITY",
+      to: user.email,
+      // no code in the subject: subjects are kept in the notification log
+      subject: `Your ${brand.name} admin sign-in code`,
+      text: [
+        `Hi ${first},`,
+        "",
+        `Your admin sign-in code is: ${code}`,
+        "",
+        "It works once and expires in 10 minutes.",
+        "If you didn't just try to sign in, someone may know your password: change it in Admin → Security.",
+      ].join("\n"),
+    },
+    undefined,
+    { logText: "Admin sign-in code sent (the code itself is not stored in this log)." },
+  );
+  return r.status === "SENT";
+}
+
+function maskEmail(email: string): string {
+  const [name = "", domain = ""] = email.split("@");
+  return `${name.slice(0, 2)}${"•".repeat(Math.max(1, name.length - 2))}@${domain}`;
+}
 
 export type LoginResult =
-  { ok: true; next: "done" | "totp" | "mfa_setup" | "bootstrap"; ticket?: string } | Fail;
+  | { ok: true; next: "code"; ticket: string; sentTo: string }
+  | { ok: true; next: "bootstrap" }
+  | Fail;
+
+const EMAIL_FAILED: Fail = {
+  ok: false,
+  error:
+    "We couldn't send your sign-in code by email right now. Please try again in a minute, or use a recovery code.",
+};
 
 export const adminSignIn = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
@@ -112,18 +150,40 @@ export const adminSignIn = createServerFn({ method: "POST" })
         }
         return { ok: false, error: r.error };
       }
-      if (r.user.mfaEnabled) {
-        return { ok: true, next: "totp", ticket: users.createMfaTicket(r.user.id) };
+      const ticket = users.createMfaTicket(r.user.id);
+      if (!(await sendSignInCode(r.user))) {
+        void audit(
+          { id: r.user.id, email },
+          "login.code_email_failed",
+          email,
+          undefined,
+          "warning",
+        );
+        // still allow a recovery code on the next screen
+        return { ok: true, next: "code", ticket, sentTo: "" };
       }
-      // No 2FA yet: signed in only far enough to set it up.
-      await users.recordLogin(r.user.id);
-      setSession(r.user.id, r.user.sessionVersion, false);
-      void audit({ id: r.user.id, email }, "login.password_ok_mfa_setup", email);
-      return { ok: true, next: "mfa_setup" };
+      void audit({ id: r.user.id, email }, "login.code_sent", email);
+      return { ok: true, next: "code", ticket, sentTo: maskEmail(email) };
     } catch (error) {
       console.error("[admin] sign in failed", error);
       return { ok: false, error: "Could not sign in right now. Please try again." };
     }
+  });
+
+export const adminResendSignInCode = createServerFn({ method: "POST" })
+  .inputValidator((d: unknown) => z.object({ ticket: z.string().max(200) }).parse(d))
+  .handler(async ({ data }): Promise<{ ok: true; sentTo: string } | Fail> => {
+    if (!authConfig() || !isDbConfigured()) return NOT_SET_UP;
+    const userId = users.parseMfaTicket(data.ticket);
+    if (!userId) return { ok: false, error: "That took too long. Please sign in again." };
+    if (!rateLimit(`admin-code-resend:${userId}`, 3, 15 * 60_000)) {
+      return { ok: false, error: "Too many codes requested. Please wait 15 minutes." };
+    }
+    const user = await users.getUser(userId);
+    if (!user) return { ok: false, error: "Please sign in again." };
+    if (!(await sendSignInCode(user))) return EMAIL_FAILED;
+    void audit({ id: user.id, email: user.email }, "login.code_resent", user.email);
+    return { ok: true, sentTo: maskEmail(user.email) };
   });
 
 export const adminSignInCode = createServerFn({ method: "POST" })
@@ -143,7 +203,7 @@ export const adminSignInCode = createServerFn({ method: "POST" })
       const actor = { id: user.id, email: user.email };
       const r = await users.checkSecondFactor(userId, data.code);
       if (!r.ok) {
-        void audit(actor, "login.2fa_failed", user.email, undefined, "warning");
+        void audit(actor, "login.code_failed", user.email, undefined, "warning");
         return r;
       }
       await users.recordLogin(userId);
@@ -153,19 +213,19 @@ export const adminSignInCode = createServerFn({ method: "POST" })
       if (r.usedRecovery) {
         const left = await users.recoveryCodesLeft(userId);
         void securityAlert("Recovery code used", [
-          `${user.email} signed in with a 2FA recovery code. ${left} recovery codes left.`,
+          `${user.email} signed in with a recovery code. ${left} recovery codes left.`,
         ]);
       }
       return { ok: true, usedRecovery: r.usedRecovery };
     } catch (error) {
-      console.error("[admin] 2fa failed", error);
+      console.error("[admin] sign-in code failed", error);
       return { ok: false, error: "Could not sign in right now. Please try again." };
     }
   });
 
 export const adminSignOut = createServerFn({ method: "POST" }).handler(async () => {
   const s = await readAdminSession();
-  if (s.kind === "ok" || s.kind === "mfa_setup") {
+  if (s.kind === "ok") {
     void audit({ id: s.user.id, email: s.user.email }, "logout", s.user.email);
   }
   deleteCookie(SESSION_COOKIE, { path: "/" });
@@ -174,6 +234,7 @@ export const adminSignOut = createServerFn({ method: "POST" }).handler(async () 
 
 // ---------- first owner ----------
 
+// Creates the Owner, then emails them a sign-in code (this also proves the email works).
 export const adminCreateOwner = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) =>
     z
@@ -184,59 +245,18 @@ export const adminCreateOwner = createServerFn({ method: "POST" })
       })
       .parse(d),
   )
-  .handler(async ({ data }): Promise<{ ok: true } | Fail> => {
+  .handler(async ({ data }): Promise<{ ok: true; ticket: string; sentTo: string } | Fail> => {
     const s = await readAdminSession();
     if (s.kind !== "bootstrap" || (await users.countUsers()) > 0) return SESSION_EXPIRED;
     const r = await users.createUser(data.email, data.name, "owner", data.password);
     if (!r.ok) return r;
     const u = await users.getUser(r.id);
     if (!u) return SESSION_EXPIRED;
-    setSession(u.id, u.sessionVersion, false); // next: set up 2FA
+    deleteCookie(SESSION_COOKIE, { path: "/" }); // the one-time setup session ends here
     void audit({ id: u.id, email: u.email }, "user.owner_created", u.email, undefined, "alert");
-    return { ok: true };
-  });
-
-// ---------- 2FA setup (for the signed-in admin) ----------
-
-async function selfForSetup() {
-  const s = await readAdminSession();
-  return s.kind === "ok" || s.kind === "mfa_setup" ? s.user : null;
-}
-
-export const adminStartMfa = createServerFn({ method: "POST" }).handler(
-  async (): Promise<{ ok: true; secret: string; uri: string } | Fail> => {
-    const me = await selfForSetup();
-    if (!me) return SESSION_EXPIRED;
-    if (me.mfaEnabled) return { ok: false, error: "2FA is already on." };
-    const secret = await users.startMfaSetup(me.id);
-    return { ok: true, secret, uri: otpauthUri(secret, me.email, brand.name) };
-  },
-);
-
-export const adminConfirmMfa = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) =>
-    z
-      .object({
-        code: z
-          .string()
-          .trim()
-          .regex(/^\d{6}$/),
-      })
-      .parse(d),
-  )
-  .handler(async ({ data }): Promise<{ ok: true; recoveryCodes: string[] } | Fail> => {
-    const me = await selfForSetup();
-    if (!me) return SESSION_EXPIRED;
-    if (!rateLimit(`admin-2fa-setup:${me.id}`, 10, 15 * 60_000)) {
-      return { ok: false, error: "Too many attempts. Please wait 15 minutes." };
-    }
-    const r = await users.confirmMfaSetup(me.id, data.code);
-    if (!r.ok) return r;
-    const fresh = await users.getUser(me.id);
-    if (fresh) setSession(fresh.id, fresh.sessionVersion, true);
-    await users.recordLogin(me.id);
-    void audit({ id: me.id, email: me.email }, "security.2fa_enabled", me.email);
-    return r;
+    const ticket = users.createMfaTicket(u.id);
+    const sent = await sendSignInCode(u);
+    return { ok: true, ticket, sentTo: sent ? maskEmail(u.email) : "" };
   });
 
 export const adminNewRecoveryCodes = createServerFn({ method: "POST" })
@@ -318,7 +338,7 @@ async function emailLink(
           : "Use this link to choose a new admin password (it expires in 30 minutes and works once):",
         link,
         "",
-        "After that you'll set up two-step verification with an authenticator app (Google Authenticator, Microsoft Authenticator or similar).",
+        "When you sign in, we'll also email you a 6-digit code to confirm it's you.",
         "",
         purpose === "reset"
           ? "If you didn't ask for this, ignore this email; your password stays the same."
@@ -396,7 +416,7 @@ export const adminUseLink = createServerFn({ method: "POST" })
         `The password for ${r.user.email} was reset by email link.`,
       ]);
     }
-    // They still need their 2FA code (or to set 2FA up) when they sign in.
+    // They still need the emailed sign-in code when they sign in.
     deleteCookie(SESSION_COOKIE, { path: "/" });
     return { ok: true };
   });
@@ -478,27 +498,6 @@ export const adminUpdateUser = createServerFn({ method: "POST" })
           .join(", ")}.`,
       ]);
     }
-    return { ok: true };
-  });
-
-export const adminResetUserMfa = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => z.object({ id: z.number().int().positive() }).parse(d))
-  .handler(async ({ data }): Promise<{ ok: true } | Fail> => {
-    const admin = await adminFor("users");
-    if (!admin.ok) return admin;
-    if (data.id === admin.user.id) {
-      return {
-        ok: false,
-        error: "Use your recovery codes, or ask another Owner to reset your 2FA.",
-      };
-    }
-    const u = (await users.listUsers()).find((x) => x.id === data.id);
-    if (!u) return { ok: false, error: "Admin not found." };
-    await users.resetMfa(data.id);
-    await admin.log("security.2fa_reset", u.email);
-    void securityAlert("2FA reset", [
-      `${admin.user.email} reset two-step verification for ${u.email}.`,
-    ]);
     return { ok: true };
   });
 

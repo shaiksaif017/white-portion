@@ -1,4 +1,4 @@
-// Admin > Team (Owner only): invite people, set roles, deactivate, reset 2FA.
+// Admin > Team (Owner only): invite people, set roles, deactivate, sign people out.
 import { useEffect, useState } from "react";
 
 import { Button } from "@/components/ui/button";
@@ -6,7 +6,6 @@ import {
   adminInviteUser,
   adminListUsers,
   adminResendInvite,
-  adminResetUserMfa,
   adminSignOutUser,
   adminUpdateUser,
 } from "@/lib/admin-auth-api";
@@ -59,7 +58,8 @@ export function AdminTeam({ me, fail }: { me: string; fail: (msg: string) => voi
       <div>
         <h3 className="text-xl font-display font-medium text-charcoal">Team</h3>
         <p className="text-muted-foreground">
-          Everyone signs in with their own email, password and authenticator app.
+          Everyone signs in with their own email and password, plus a code emailed to them each
+          time.
         </p>
       </div>
 
@@ -149,7 +149,6 @@ export function AdminTeam({ me, fail }: { me: string; fail: (msg: string) => voi
               <tr>
                 <th className="p-2.5">Person</th>
                 <th className="p-2.5">Role</th>
-                <th className="p-2.5">2FA</th>
                 <th className="p-2.5">Last sign-in</th>
                 <th className="p-2.5">Actions</th>
               </tr>
@@ -198,13 +197,6 @@ export function AdminTeam({ me, fail }: { me: string; fail: (msg: string) => voi
                         ))}
                       </select>
                     </td>
-                    <td className="p-2.5">
-                      {u.mfaEnabled ? (
-                        <span className="text-primary font-semibold">On</span>
-                      ) : (
-                        <span className="text-amber-700">Not set up</span>
-                      )}
-                    </td>
                     <td className="p-2.5 whitespace-nowrap">
                       {u.lastLoginAt
                         ? new Date(u.lastLoginAt).toLocaleString("en-IN", {
@@ -228,19 +220,6 @@ export function AdminTeam({ me, fail }: { me: string; fail: (msg: string) => voi
                           }
                         >
                           Resend invite
-                        </button>
-                      )}
-                      {!self && u.active && u.mfaEnabled && (
-                        <button
-                          type="button"
-                          className="text-primary"
-                          onClick={() =>
-                            confirm(
-                              `Reset 2FA for ${u.email}? They'll set it up again at next sign-in.`,
-                            ) && void act(adminResetUserMfa({ data: { id: u.id } }), "2FA reset.")
-                          }
-                        >
-                          Reset 2FA
                         </button>
                       )}
                       {!self && u.active && (

@@ -3,35 +3,6 @@ import { beforeAll, describe, expect, it } from "vitest";
 import { can, PasswordSchema, ROLE_PERMISSIONS } from "@/lib/admin-types";
 import { securityHeaders } from "@/lib/security-headers";
 import { sanitizeDetails } from "@/server/audit";
-import { base32Decode, base32Encode, totpAt, verifyTotp } from "@/server/totp";
-
-describe("TOTP (RFC 6238 reference values)", () => {
-  // The RFC's SHA-1 test key is the ASCII string "12345678901234567890".
-  const secret = base32Encode(Buffer.from("12345678901234567890"));
-
-  it("round-trips base32", () => {
-    expect(secret).toBe("GEZDGNBVGY3TQOJQGEZDGNBVGY3TQOJQ");
-    expect(base32Decode(secret).toString()).toBe("12345678901234567890");
-  });
-
-  it("matches the RFC's published codes (last 6 digits)", () => {
-    expect(totpAt(secret, Math.floor(59 / 30))).toBe("287082");
-    expect(totpAt(secret, Math.floor(1111111109 / 30))).toBe("081804");
-    expect(totpAt(secret, Math.floor(1234567890 / 30))).toBe("005924");
-    expect(totpAt(secret, Math.floor(2000000000 / 30))).toBe("279037");
-  });
-
-  it("accepts ±1 step for clock drift and refuses replays", () => {
-    const now = 1234567890_000;
-    const step = Math.floor(now / 30_000);
-    expect(verifyTotp(secret, totpAt(secret, step), 0, now)).toBe(step);
-    expect(verifyTotp(secret, totpAt(secret, step - 1), 0, now)).toBe(step - 1);
-    expect(verifyTotp(secret, totpAt(secret, step - 3), 0, now)).toBeNull();
-    // already used this step -> rejected
-    expect(verifyTotp(secret, totpAt(secret, step), step, now)).toBeNull();
-    expect(verifyTotp(secret, "12345", 0, now)).toBeNull();
-  });
-});
 
 describe("roles", () => {
   it("gives least privilege to staff and managers", () => {

@@ -51,9 +51,16 @@ function MySecurity({
       <div>
         <h3 className="text-xl font-display font-medium text-charcoal">Your account security</h3>
         <p className="text-muted-foreground">
-          Two-step verification is on. {recoveryCodesLeft} unused recovery code
+          Each sign-in needs your password and a code sent to your email. Recovery codes let you
+          sign in if you can't get the email: {recoveryCodesLeft} unused code
           {recoveryCodesLeft === 1 ? "" : "s"} left.
         </p>
+        {recoveryCodesLeft === 0 && (
+          <p className="p-3 rounded border border-amber-500/40 bg-amber-500/10 text-charcoal font-semibold">
+            You have no recovery codes. Create them below and keep them somewhere safe, so you can
+            still sign in if email ever stops working.
+          </p>
+        )}
       </div>
       <div className="grid grid-cols-1 lg:grid-cols-3 gap-4">
         <form
@@ -127,7 +134,7 @@ function MySecurity({
             setRcPassword("");
           }}
         >
-          <h4 className="font-bold text-charcoal">New recovery codes</h4>
+          <h4 className="font-bold text-charcoal">Recovery codes</h4>
           <p className="text-muted-foreground">
             Replaces all old codes. Store the new ones safely.
           </p>
@@ -150,7 +157,7 @@ function MySecurity({
                 onChange={(e) => setRcPassword(e.target.value)}
               />
               <Button type="submit" variant="outline" className="text-xs">
-                Create new codes
+                {recoveryCodesLeft === 0 ? "Create recovery codes" : "Create new codes"}
               </Button>
             </>
           )}

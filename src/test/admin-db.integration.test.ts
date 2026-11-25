@@ -1,4 +1,4 @@
-// Real-database test for admin accounts, 2FA, recovery codes, reset links, roles,
+// Real-database test for admin accounts, emailed sign-in codes, recovery codes, reset links, roles,
 // the audit log and the dashboard. Runs only with DB_TEST=1 on a throwaway database.
 import { afterAll, beforeAll, describe, expect, it } from "vitest";
 
@@ -8,10 +8,8 @@ describe.skipIf(!enabled)("admin security against a real database", async () => 
   process.env["SESSION_SECRET"] ??= "w".repeat(40);
   process.env["ADMIN_PASSWORD_HASH"] ??= "scrypt:00:00";
   const users = await import("@/server/admin-users");
-  const totp = await import("@/server/totp");
   const audit = await import("@/server/audit");
   const { getDashboardStats } = await import("@/server/dashboard");
-  const { decryptSecret } = await import("@/server/secrets");
   const { getDb } = await import("@/server/db");
 
   let ownerId = 0;
@@ -25,15 +23,6 @@ describe.skipIf(!enabled)("admin security against a real database", async () => 
   afterAll(async () => {
     await (await getDb()).end();
   });
-
-  const pendingSecret = async (id: number) => {
-    const db = await getDb();
-    const [r] = await db.query<import("mysql2").RowDataPacket[]>(
-      "SELECT totp_pending FROM admin_users WHERE id = ?",
-      [id],
-    );
-    return decryptSecret(String(r[0]?.["totp_pending"]))!;
-  };
 
   it("creates accounts and checks passwords", async () => {
     const o = await users.createUser("owner@example.com", "Owner", "owner", "a strong password 1");
@@ -73,37 +62,58 @@ describe.skipIf(!enabled)("admin security against a real database", async () => 
     });
   });
 
-  it("sets up 2FA, refuses replayed codes, and accepts each recovery code once", async () => {
-    await users.startMfaSetup(ownerId);
-    const secret = await pendingSecret(ownerId);
-    expect(await users.confirmMfaSetup(ownerId, "000000")).toMatchObject({ ok: false });
-    const step = totp.currentStep();
-    const confirmed = await users.confirmMfaSetup(ownerId, totp.totpAt(secret, step));
-    if (!confirmed.ok) throw new Error(confirmed.error);
-    expect(confirmed.recoveryCodes).toHaveLength(10);
-    expect((await users.getUser(ownerId))!.mfaEnabled).toBe(true);
-
-    // the code used for setup can't be used again to sign in
-    expect(await users.checkSecondFactor(ownerId, totp.totpAt(secret, step))).toMatchObject({
-      ok: false,
-    });
-    expect(await users.checkSecondFactor(ownerId, totp.totpAt(secret, step + 1))).toEqual({
+  it("emailed sign-in codes work once, only the newest works, and recovery codes are a backup", async () => {
+    const first = await users.createLoginCode(ownerId);
+    const second = await users.createLoginCode(ownerId);
+    expect(second).toMatch(/^\d{6}$/);
+    if (first !== second) {
+      expect(await users.checkSecondFactor(ownerId, first)).toMatchObject({ ok: false });
+    }
+    expect(await users.checkSecondFactor(ownerId, second)).toEqual({
       ok: true,
       usedRecovery: false,
     });
-    const rc = confirmed.recoveryCodes[0]!;
+    expect(await users.checkSecondFactor(ownerId, second)).toMatchObject({ ok: false }); // used
+
+    // another person's code never works for this account
+    const staffCode = await users.createLoginCode(staffId);
+    const ownerCode = await users.createLoginCode(ownerId);
+    if (staffCode !== ownerCode) {
+      expect(await users.checkSecondFactor(ownerId, staffCode)).toMatchObject({ ok: false });
+    }
+
+    const codes = await users.regenerateRecoveryCodes(ownerId);
+    expect(codes).toHaveLength(10);
+    const rc = codes[0]!;
     expect(await users.checkSecondFactor(ownerId, rc.toUpperCase())).toEqual({
       ok: true,
       usedRecovery: true,
     });
     expect(await users.checkSecondFactor(ownerId, rc)).toMatchObject({ ok: false });
     expect(await users.recoveryCodesLeft(ownerId)).toBe(9);
-    // two failed codes above count towards the lockout; a good sign-in resets it
-    await users.recordLogin(ownerId);
+    await users.recordLogin(ownerId); // clears the failed attempts above
+  });
 
-    await users.resetMfa(ownerId);
-    expect((await users.getUser(ownerId))!.mfaEnabled).toBe(false);
-    expect(await users.recoveryCodesLeft(ownerId)).toBe(0);
+  it("locks after 5 wrong codes, even with a valid code afterwards", async () => {
+    const code = await users.createLoginCode(ownerId);
+    const wrong = code === "000000" ? "111111" : "000000";
+    for (let i = 0; i < 5; i++) await users.checkSecondFactor(ownerId, wrong);
+    expect(await users.checkSecondFactor(ownerId, code)).toMatchObject({
+      ok: false,
+      error: expect.stringContaining("Too many failed attempts"),
+    });
+    await users.recordLogin(ownerId);
+  });
+
+  it("expired codes are refused", async () => {
+    const code = await users.createLoginCode(ownerId);
+    const db = await getDb();
+    await db.query(
+      "UPDATE admin_tokens SET expires_at = UTC_TIMESTAMP() - INTERVAL 1 MINUTE WHERE user_id = ? AND purpose = 'login'",
+      [ownerId],
+    );
+    expect(await users.checkSecondFactor(ownerId, code)).toMatchObject({ ok: false });
+    await users.recordLogin(ownerId);
   });
 
   it("keeps at least one owner and stops people changing their own role", async () => {
