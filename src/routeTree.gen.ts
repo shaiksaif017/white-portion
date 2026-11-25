@@ -27,7 +27,11 @@ import { Route as ServicesProductsRouteImport } from './routes/services-products
 import { Route as SportsNutritionRouteImport } from './routes/sports-nutrition'
 import { Route as StoriesRouteImport } from './routes/stories'
 import { Route as WomensWellnessRouteImport } from './routes/womens-wellness'
+import { Route as AccountIndexRouteImport } from './routes/account.index'
+import { Route as AccountLoginRouteImport } from './routes/account.login'
 import { Route as ApiDownloadRouteImport } from './routes/api.download'
+import { Route as ApiLessonFileRouteImport } from './routes/api.lesson-file'
+import { Route as LearnSlugRouteImport } from './routes/learn.$slug'
 import { Route as MediaIdRouteImport } from './routes/media.$id'
 import { Route as OrderNumberRouteImport } from './routes/order.$number'
 import { Route as ProductSlugRouteImport } from './routes/product.$slug'
@@ -126,9 +130,29 @@ const WomensWellnessRoute = WomensWellnessRouteImport.update({
   path: '/womens-wellness',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AccountIndexRoute = AccountIndexRouteImport.update({
+  id: '/account/',
+  path: '/account/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AccountLoginRoute = AccountLoginRouteImport.update({
+  id: '/account/login',
+  path: '/account/login',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const ApiDownloadRoute = ApiDownloadRouteImport.update({
   id: '/api/download',
   path: '/api/download',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const ApiLessonFileRoute = ApiLessonFileRouteImport.update({
+  id: '/api/lesson-file',
+  path: '/api/lesson-file',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LearnSlugRoute = LearnSlugRouteImport.update({
+  id: '/learn/$slug',
+  path: '/learn/$slug',
   getParentRoute: () => rootRouteImport,
 } as any)
 const MediaIdRoute = MediaIdRouteImport.update({
@@ -186,11 +210,15 @@ export interface FileRoutesByFullPath {
   '/sports-nutrition': typeof SportsNutritionRoute
   '/stories': typeof StoriesRoute
   '/womens-wellness': typeof WomensWellnessRoute
+  '/account/login': typeof AccountLoginRoute
   '/api/download': typeof ApiDownloadRoute
+  '/api/lesson-file': typeof ApiLessonFileRoute
+  '/learn/$slug': typeof LearnSlugRoute
   '/media/$id': typeof MediaIdRoute
   '/order/$number': typeof OrderNumberRoute
   '/product/$slug': typeof ProductSlugRoute
   '/products/$category': typeof ProductsCategoryRoute
+  '/account/': typeof AccountIndexRoute
   '/products/': typeof ProductsIndexRoute
   '/api/admin/upload': typeof ApiAdminUploadRoute
   '/api/razorpay/webhook': typeof ApiRazorpayWebhookRoute
@@ -214,11 +242,15 @@ export interface FileRoutesByTo {
   '/sports-nutrition': typeof SportsNutritionRoute
   '/stories': typeof StoriesRoute
   '/womens-wellness': typeof WomensWellnessRoute
+  '/account/login': typeof AccountLoginRoute
   '/api/download': typeof ApiDownloadRoute
+  '/api/lesson-file': typeof ApiLessonFileRoute
+  '/learn/$slug': typeof LearnSlugRoute
   '/media/$id': typeof MediaIdRoute
   '/order/$number': typeof OrderNumberRoute
   '/product/$slug': typeof ProductSlugRoute
   '/products/$category': typeof ProductsCategoryRoute
+  '/account': typeof AccountIndexRoute
   '/products': typeof ProductsIndexRoute
   '/api/admin/upload': typeof ApiAdminUploadRoute
   '/api/razorpay/webhook': typeof ApiRazorpayWebhookRoute
@@ -243,11 +275,15 @@ export interface FileRoutesById {
   '/sports-nutrition': typeof SportsNutritionRoute
   '/stories': typeof StoriesRoute
   '/womens-wellness': typeof WomensWellnessRoute
+  '/account/login': typeof AccountLoginRoute
   '/api/download': typeof ApiDownloadRoute
+  '/api/lesson-file': typeof ApiLessonFileRoute
+  '/learn/$slug': typeof LearnSlugRoute
   '/media/$id': typeof MediaIdRoute
   '/order/$number': typeof OrderNumberRoute
   '/product/$slug': typeof ProductSlugRoute
   '/products/$category': typeof ProductsCategoryRoute
+  '/account/': typeof AccountIndexRoute
   '/products/': typeof ProductsIndexRoute
   '/api/admin/upload': typeof ApiAdminUploadRoute
   '/api/razorpay/webhook': typeof ApiRazorpayWebhookRoute
@@ -273,11 +309,15 @@ export interface FileRouteTypes {
     | '/sports-nutrition'
     | '/stories'
     | '/womens-wellness'
+    | '/account/login'
     | '/api/download'
+    | '/api/lesson-file'
+    | '/learn/$slug'
     | '/media/$id'
     | '/order/$number'
     | '/product/$slug'
     | '/products/$category'
+    | '/account/'
     | '/products/'
     | '/api/admin/upload'
     | '/api/razorpay/webhook'
@@ -301,11 +341,15 @@ export interface FileRouteTypes {
     | '/sports-nutrition'
     | '/stories'
     | '/womens-wellness'
+    | '/account/login'
     | '/api/download'
+    | '/api/lesson-file'
+    | '/learn/$slug'
     | '/media/$id'
     | '/order/$number'
     | '/product/$slug'
     | '/products/$category'
+    | '/account'
     | '/products'
     | '/api/admin/upload'
     | '/api/razorpay/webhook'
@@ -329,11 +373,15 @@ export interface FileRouteTypes {
     | '/sports-nutrition'
     | '/stories'
     | '/womens-wellness'
+    | '/account/login'
     | '/api/download'
+    | '/api/lesson-file'
+    | '/learn/$slug'
     | '/media/$id'
     | '/order/$number'
     | '/product/$slug'
     | '/products/$category'
+    | '/account/'
     | '/products/'
     | '/api/admin/upload'
     | '/api/razorpay/webhook'
@@ -358,11 +406,15 @@ export interface RootRouteChildren {
   SportsNutritionRoute: typeof SportsNutritionRoute
   StoriesRoute: typeof StoriesRoute
   WomensWellnessRoute: typeof WomensWellnessRoute
+  AccountLoginRoute: typeof AccountLoginRoute
   ApiDownloadRoute: typeof ApiDownloadRoute
+  ApiLessonFileRoute: typeof ApiLessonFileRoute
+  LearnSlugRoute: typeof LearnSlugRoute
   MediaIdRoute: typeof MediaIdRoute
   OrderNumberRoute: typeof OrderNumberRoute
   ProductSlugRoute: typeof ProductSlugRoute
   ProductsCategoryRoute: typeof ProductsCategoryRoute
+  AccountIndexRoute: typeof AccountIndexRoute
   ProductsIndexRoute: typeof ProductsIndexRoute
   ApiAdminUploadRoute: typeof ApiAdminUploadRoute
   ApiRazorpayWebhookRoute: typeof ApiRazorpayWebhookRoute
@@ -496,11 +548,39 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof WomensWellnessRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/account/': {
+      id: '/account/'
+      path: '/account'
+      fullPath: '/account/'
+      preLoaderRoute: typeof AccountIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/account/login': {
+      id: '/account/login'
+      path: '/account/login'
+      fullPath: '/account/login'
+      preLoaderRoute: typeof AccountLoginRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/api/download': {
       id: '/api/download'
       path: '/api/download'
       fullPath: '/api/download'
       preLoaderRoute: typeof ApiDownloadRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/api/lesson-file': {
+      id: '/api/lesson-file'
+      path: '/api/lesson-file'
+      fullPath: '/api/lesson-file'
+      preLoaderRoute: typeof ApiLessonFileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/learn/$slug': {
+      id: '/learn/$slug'
+      path: '/learn/$slug'
+      fullPath: '/learn/$slug'
+      preLoaderRoute: typeof LearnSlugRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/media/$id': {
@@ -574,11 +654,15 @@ const rootRouteChildren: RootRouteChildren = {
   SportsNutritionRoute: SportsNutritionRoute,
   StoriesRoute: StoriesRoute,
   WomensWellnessRoute: WomensWellnessRoute,
+  AccountLoginRoute: AccountLoginRoute,
   ApiDownloadRoute: ApiDownloadRoute,
+  ApiLessonFileRoute: ApiLessonFileRoute,
+  LearnSlugRoute: LearnSlugRoute,
   MediaIdRoute: MediaIdRoute,
   OrderNumberRoute: OrderNumberRoute,
   ProductSlugRoute: ProductSlugRoute,
   ProductsCategoryRoute: ProductsCategoryRoute,
+  AccountIndexRoute: AccountIndexRoute,
   ProductsIndexRoute: ProductsIndexRoute,
   ApiAdminUploadRoute: ApiAdminUploadRoute,
   ApiRazorpayWebhookRoute: ApiRazorpayWebhookRoute,

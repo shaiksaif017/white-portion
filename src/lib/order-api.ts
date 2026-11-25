@@ -22,6 +22,7 @@ import { isAdminRequest } from "@/server/admin-session";
 import { rateLimit } from "@/server/auth";
 import * as checkout from "@/server/checkout";
 import * as coupons from "@/server/coupons";
+import { revokeForOrder } from "@/server/courses";
 import { isDbConfigured } from "@/server/db";
 import { siteUrl } from "@/server/env";
 import { sendEmail } from "@/server/mailer";
@@ -276,6 +277,7 @@ export const adminMarkRefunded = createServerFn({ method: "POST" })
       if (!order || order.paymentStatus !== "paid")
         return { ok: false, error: "Only paid orders can be marked refunded." };
       await orders.setPaymentStatus(data.id, "refunded");
+      await revokeForOrder(data.id); // refunded courses lose access
       return { ok: true };
     } catch (error) {
       console.error("[admin] mark refunded failed", error);

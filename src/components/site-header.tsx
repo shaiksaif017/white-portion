@@ -1,6 +1,6 @@
 import { useState } from "react";
 import { Link } from "@tanstack/react-router";
-import { ArrowUpRight, Menu, X, ChevronDown, ShoppingBag } from "lucide-react";
+import { ArrowUpRight, Menu, X, ChevronDown, ShoppingBag, UserRound } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Wordmark } from "@/components/wordmark";
 import { useCartCount } from "@/lib/cart";
@@ -105,6 +105,9 @@ export function SiteHeader({ isSolid = false }: SiteHeaderProps) {
       </nav>
 
       <div className="header-actions">
+      <Link to="/account" className="header-cart" aria-label="My account" title="My account">
+        <UserRound aria-hidden="true" />
+      </Link>
       {cartCount > 0 && (
         <Link to="/cart" className="header-cart" aria-label={`Cart, ${cartCount} item${cartCount === 1 ? "" : "s"}`}>
           <ShoppingBag aria-hidden="true" />

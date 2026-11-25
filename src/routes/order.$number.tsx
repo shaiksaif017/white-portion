@@ -108,8 +108,18 @@ function OrderPage() {
                       </p>
                       <p className="text-[11px] text-muted-foreground">{KIND_LABEL[i.kind]}</p>
                       {order.paymentStatus === "paid" && i.kind === "course" && (
-                        <p className="text-xs text-primary mt-1">
-                          We'll email your course access details within 24 hours.
+                        <p className="text-xs mt-1">
+                          {i.productSlug ? (
+                            <a
+                              href={`/account/login?redirect=${encodeURIComponent(`/learn/${i.productSlug}`)}`}
+                              className="font-semibold text-primary underline underline-offset-4"
+                            >
+                              Start the course
+                            </a>
+                          ) : (
+                            <span className="text-primary">Your course is in your account.</span>
+                          )}{" "}
+                          <span className="text-muted-foreground">(log in with {order.email})</span>
                         </p>
                       )}
                     </div>

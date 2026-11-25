@@ -21,6 +21,7 @@ import {
   MAX_QTY,
 } from "@/lib/order-types";
 import { type CategoryKind, availabilityOf } from "@/lib/shop-types";
+import { enrolFromOrder } from "./courses";
 import { getDb, isDuplicateKeyError } from "./db";
 
 type ParsedCheckout = z.output<typeof CheckoutSchema>;
@@ -386,6 +387,7 @@ export async function markPaidWithin(
     [paymentId, orderId],
   );
   await reduceStock(conn, orderId);
+  await enrolFromOrder(conn, orderId);
   if (couponCode) {
     await conn.query("UPDATE coupons SET used_count = used_count + 1 WHERE code = ?", [couponCode]);
   }

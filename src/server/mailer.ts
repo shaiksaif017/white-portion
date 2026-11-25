@@ -81,7 +81,12 @@ function describeError(e: unknown): string {
   return parts.join(" | ");
 }
 
-export async function sendEmail(message: EmailMessage, replyTo?: string): Promise<SendResult> {
+// opts.logText replaces the body in the notification log (e.g. to hide login codes).
+export async function sendEmail(
+  message: EmailMessage,
+  replyTo?: string,
+  opts: { logText?: string } = {},
+): Promise<SendResult> {
   let status: "SENT" | "FAILED" | "SKIPPED" = "SKIPPED";
   let error: string | undefined;
 
@@ -111,7 +116,7 @@ export async function sendEmail(message: EmailMessage, replyTo?: string): Promis
       type: message.type,
       recipient: message.to,
       subject: message.subject,
-      content: message.text,
+      content: opts.logText ?? message.text,
       status,
       error,
     });

@@ -3,6 +3,8 @@ import { ArrowDown, ArrowUp, Edit3, ImagePlus, Plus, Trash2, Upload, X } from "l
 import { useEffect, useMemo, useState } from "react";
 
 import { AdminCoupons } from "@/components/admin-coupons";
+import { AdminCourseEditor } from "@/components/admin-course-editor";
+import { AdminEnrolments } from "@/components/admin-enrolments";
 import { AdminSampleData } from "@/components/admin-sample-data";
 import { Button } from "@/components/ui/button";
 import {
@@ -162,7 +164,8 @@ export function AdminProducts({ onSessionExpired }: { onSessionExpired: (msg: st
   const [filterStatus, setFilterStatus] = useState<ProductStatus | "all">("all");
   const [search, setSearch] = useState("");
   const [showCategories, setShowCategories] = useState(false);
-  const [panel, setPanel] = useState<"none" | "coupons" | "sample">("none");
+  const [panel, setPanel] = useState<"none" | "coupons" | "sample" | "students">("none");
+  const [courseEditor, setCourseEditor] = useState<{ id: number; name: string } | null>(null);
 
   function fail(msg: string) {
     if (/session has expired/i.test(msg)) onSessionExpired(msg);
@@ -355,6 +358,14 @@ export function AdminProducts({ onSessionExpired }: { onSessionExpired: (msg: st
             type="button"
             variant="outline"
             className="text-xs"
+            onClick={() => setPanel((v) => (v === "students" ? "none" : "students"))}
+          >
+            {panel === "students" ? "Hide students" : "Course students"}
+          </Button>
+          <Button
+            type="button"
+            variant="outline"
+            className="text-xs"
             onClick={() => setShowCategories((v) => !v)}
           >
             {showCategories ? "Hide categories" : "Manage categories"}
@@ -386,6 +397,22 @@ export function AdminProducts({ onSessionExpired }: { onSessionExpired: (msg: st
 
       {showCategories && <CategoryManager categories={categories} onChanged={load} fail={fail} />}
       {panel === "coupons" && <AdminCoupons fail={fail} />}
+      {panel === "students" && (
+        <AdminEnrolments
+          fail={fail}
+          courses={products
+            .filter((p) => catById.get(p.categoryId)?.kind === "course")
+            .map((p) => ({ id: p.id, name: p.name }))}
+        />
+      )}
+      {courseEditor && (
+        <AdminCourseEditor
+          productId={courseEditor.id}
+          productName={courseEditor.name}
+          fail={fail}
+          onClose={() => setCourseEditor(null)}
+        />
+      )}
       {panel === "sample" && (
         <AdminSampleData
           fail={fail}
@@ -520,6 +547,15 @@ export function AdminProducts({ onSessionExpired }: { onSessionExpired: (msg: st
                         >
                           View
                         </a>
+                      )}
+                      {catById.get(p.categoryId)?.kind === "course" && (
+                        <button
+                          type="button"
+                          onClick={() => setCourseEditor({ id: p.id, name: p.name })}
+                          className="text-primary underline mr-2"
+                        >
+                          Lessons
+                        </button>
                       )}
                       <button
                         type="button"
@@ -905,9 +941,19 @@ export function AdminProducts({ onSessionExpired }: { onSessionExpired: (msg: st
               </div>
             )}
             {kind === "course" && (
-              <p className="text-[11px] text-muted-foreground">
-                Course lessons and videos are added in the next update (course content manager).
-              </p>
+              <div className="text-[11px] text-muted-foreground">
+                {form.id ? (
+                  <button
+                    type="button"
+                    className="font-semibold text-primary underline"
+                    onClick={() => setCourseEditor({ id: form.id!, name: form.name })}
+                  >
+                    Edit modules, lessons and instructor
+                  </button>
+                ) : (
+                  "Save the course first, then click “Lessons” in the product list to add modules and videos."
+                )}
+              </div>
             )}
 
             <div className="flex justify-end gap-2 pt-2 border-t border-border">

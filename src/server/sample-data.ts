@@ -8,6 +8,7 @@ import type { ProductInput } from "@/lib/shop-types";
 import type { z } from "zod";
 import { saveProduct, deleteProduct, listCategories } from "./catalogue";
 import { saveCoupon } from "./coupons";
+import { saveCourseContent } from "./courses";
 import { getDb } from "./db";
 import { saveFile } from "./files";
 import { createPendingOrder, getShopSettings, markPaidWithin } from "./orders";
@@ -338,6 +339,79 @@ export async function loadSampleData(): Promise<
     );
     if (!res.ok) throw new Error(`Sample product "${p.name}": ${res.error}`);
     ids.set(p.slug ?? "", res.id);
+  }
+
+  // Course outlines for the sample courses (videos left empty: "coming soon").
+  const lesson = (title: string, minutes: number, isPreview = false) => ({
+    title,
+    description:
+      "Sample lesson. Replace with your own video link and notes in Admin → Products → Lessons.",
+    videoUrl: "",
+    durationMinutes: minutes,
+    isPreview,
+    attachmentFileId: null,
+  });
+  const strength = ids.get("sample-course-strength-foundations");
+  if (strength) {
+    await saveCourseContent({
+      productId: strength,
+      info: {
+        instructor: "Sample Coach",
+        instructorBio:
+          "Sample instructor profile. Replace with your coach's experience and qualifications.",
+        duration: "6 weeks",
+        level: "Beginner",
+      },
+      modules: [
+        {
+          title: "Getting started",
+          lessons: [
+            lesson("Welcome and how the course works", 6, true),
+            lesson("Warm-up and mobility routine", 14),
+          ],
+        },
+        {
+          title: "The main lifts",
+          lessons: [
+            lesson("Squat technique", 18),
+            lesson("Deadlift and hinge", 20),
+            lesson("Bench press and push-ups", 16),
+          ],
+        },
+        {
+          title: "Your programme",
+          lessons: [
+            lesson("Weekly plan and progression", 12),
+            lesson("Tracking and next steps", 9),
+          ],
+        },
+      ],
+    });
+  }
+  const nutrition = ids.get("sample-course-nutrition-made-simple");
+  if (nutrition) {
+    await saveCourseContent({
+      productId: nutrition,
+      info: {
+        instructor: "Sample Nutritionist",
+        instructorBio: "Sample instructor profile.",
+        duration: "4 weeks",
+        level: "All levels",
+      },
+      modules: [
+        {
+          title: "Foundations",
+          lessons: [
+            lesson("Calories and energy balance", 11, true),
+            lesson("Protein, carbs and fats", 15),
+          ],
+        },
+        {
+          title: "Planning meals",
+          lessons: [lesson("Building a balanced plate", 13), lesson("A simple weekly plan", 17)],
+        },
+      ],
+    });
   }
 
   await saveCoupon(

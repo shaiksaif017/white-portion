@@ -197,6 +197,69 @@ const SCHEMA: string[] = [
     created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
     UNIQUE KEY uniq_coupon_code (code)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
+  // ---------- customer accounts (log in with an emailed code, no passwords) ----------
+  `CREATE TABLE IF NOT EXISTS customers (
+    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    email VARCHAR(254) NOT NULL,
+    name VARCHAR(120) NOT NULL DEFAULT '',
+    phone VARCHAR(20) NOT NULL DEFAULT '',
+    session_version INT NOT NULL DEFAULT 1,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_login_at DATETIME NULL,
+    UNIQUE KEY uniq_customer_email (email)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+  `CREATE TABLE IF NOT EXISTS customer_login_codes (
+    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    email VARCHAR(254) NOT NULL,
+    code_hash CHAR(64) NOT NULL,
+    attempts INT NOT NULL DEFAULT 0,
+    used TINYINT NOT NULL DEFAULT 0,
+    expires_at DATETIME NOT NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    KEY idx_code_email (email, created_at)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+
+  // ---------- courses ----------
+  `CREATE TABLE IF NOT EXISTS course_modules (
+    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    product_id INT NOT NULL,
+    title VARCHAR(200) NOT NULL,
+    sort_order INT NOT NULL DEFAULT 0,
+    KEY idx_module_product (product_id)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+  `CREATE TABLE IF NOT EXISTS course_lessons (
+    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    module_id INT NOT NULL,
+    product_id INT NOT NULL,
+    title VARCHAR(200) NOT NULL,
+    description TEXT NULL,
+    video_url VARCHAR(500) NOT NULL DEFAULT '',
+    duration_minutes INT NOT NULL DEFAULT 0,
+    is_preview TINYINT NOT NULL DEFAULT 0,
+    attachment_file_id INT NULL,
+    sort_order INT NOT NULL DEFAULT 0,
+    KEY idx_lesson_module (module_id),
+    KEY idx_lesson_product (product_id)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+  // Access is keyed by email, so a purchase works even before the buyer makes an account.
+  `CREATE TABLE IF NOT EXISTS enrolments (
+    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    email VARCHAR(254) NOT NULL,
+    product_id INT NOT NULL,
+    order_id INT NULL,
+    source VARCHAR(10) NOT NULL,
+    status VARCHAR(10) NOT NULL DEFAULT 'active',
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_enrolment (email, product_id),
+    KEY idx_enrolment_product (product_id)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+  `CREATE TABLE IF NOT EXISTS lesson_progress (
+    email VARCHAR(254) NOT NULL,
+    lesson_id INT NOT NULL,
+    completed_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    PRIMARY KEY (email, lesson_id)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
 ];
 
 // Columns added after the first release. Each is added only if it is missing, so
@@ -215,6 +278,10 @@ const COLUMNS: [table: string, column: string, definition: string][] = [
   ["order_items", "variant_name", "VARCHAR(120) NULL"],
   ["order_items", "sku", "VARCHAR(64) NULL"],
   ["order_items", "gst_rate_bps", "INT NOT NULL DEFAULT 0"],
+  ["products", "course_instructor", "VARCHAR(120) NOT NULL DEFAULT ''"],
+  ["products", "course_instructor_bio", "TEXT NULL"],
+  ["products", "course_duration", "VARCHAR(60) NOT NULL DEFAULT ''"],
+  ["products", "course_level", "VARCHAR(40) NOT NULL DEFAULT ''"],
 ];
 
 const INDEXES: [table: string, name: string, definition: string][] = [

@@ -37,12 +37,22 @@ function totalsLines(o: OrderRecord): string[] {
   ];
 }
 
-function nextSteps(o: OrderRecord): string[] {
+function siteBase(link: string): string {
+  try {
+    return new URL(link).origin;
+  } catch {
+    return "";
+  }
+}
+
+function nextSteps(o: OrderRecord, link: string): string[] {
   const kinds = new Set(o.items.map((i) => i.kind));
   const steps: string[] = [];
   if (kinds.has("ebook")) steps.push("Your e-books are ready to download from your order page.");
   if (kinds.has("course"))
-    steps.push("Our team will email your course access details within 24 hours.");
+    steps.push(
+      `Your course is ready: log in at ${siteBase(link)}/account with this email address (${o.email}) to start learning.`,
+    );
   if (kinds.has("physical") || kinds.has("pharma"))
     steps.push("We'll email you again with tracking details once your parcel ships.");
   return steps;
@@ -76,7 +86,7 @@ ${row("<strong>Total paid</strong>", esc(formatINR(o.totalPaise)), true)}
 
 export function buildOrderConfirmation(o: OrderRecord, link: string): EmailMessage {
   const first = o.name.split(" ")[0] ?? o.name;
-  const steps = nextSteps(o);
+  const steps = nextSteps(o, link);
   const text = [
     `Dear ${first},`,
     "",

@@ -19,6 +19,7 @@ import {
   ProductInputSchema,
   slugify,
 } from "@/lib/shop-types";
+import { deleteCourseContent } from "./courses";
 import { getDb, isDuplicateKeyError } from "./db";
 import { deleteFiles } from "./files";
 
@@ -564,8 +565,9 @@ export async function deleteProduct(
   );
   await db.query("DELETE FROM product_images WHERE product_id = ?", [id]);
   await db.query("DELETE FROM product_variants WHERE product_id = ?", [id]);
+  const lessonFiles = await deleteCourseContent(id);
   await db.query("DELETE FROM products WHERE id = ?", [id]);
-  const fileIds = imgs.map((i) => Number(i["file_id"]));
+  const fileIds = [...imgs.map((i) => Number(i["file_id"])), ...lessonFiles];
   for (const col of ["digital_file_id", "preview_file_id"]) {
     if (rows[0][col] !== null) fileIds.push(Number(rows[0][col]));
   }

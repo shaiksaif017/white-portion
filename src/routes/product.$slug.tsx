@@ -1,5 +1,15 @@
 import { createFileRoute, Link, notFound, useNavigate } from "@tanstack/react-router";
-import { ArrowLeft, BookOpen, Check, MessageCircle, Minus, Plus, ShoppingBag } from "lucide-react";
+import {
+  ArrowLeft,
+  BookOpen,
+  Check,
+  Lock,
+  MessageCircle,
+  Minus,
+  PlayCircle,
+  Plus,
+  ShoppingBag,
+} from "lucide-react";
 import { useState } from "react";
 
 import { Price, ProductCard, ProductImage, SampleBadge, TrustRow } from "@/components/shop-ui";
@@ -7,6 +17,8 @@ import { SiteFooter } from "@/components/site-footer";
 import { SiteHeader } from "@/components/site-header";
 import { brand } from "@/lib/brand";
 import { cart } from "@/lib/cart";
+import { getCourseOutline } from "@/lib/account-api";
+import { type Curriculum, formatMinutes } from "@/lib/course-types";
 import { getShopStatus } from "@/lib/order-api";
 import { MAX_QTY } from "@/lib/order-types";
 import { getProductPage } from "@/lib/shop-api";
@@ -20,7 +32,11 @@ export const Route = createFileRoute("/product/$slug")({
       getShopStatus(),
     ]);
     if (!product) throw notFound();
-    return { product, paymentsEnabled: status.paymentsEnabled };
+    const course =
+      product.kind === "course"
+        ? await getCourseOutline({ data: { productId: product.id } })
+        : null;
+    return { product, paymentsEnabled: status.paymentsEnabled, course };
   },
   head: ({ loaderData }) => {
     const p = loaderData?.product;
@@ -39,7 +55,7 @@ export const Route = createFileRoute("/product/$slug")({
 });
 
 function ProductPage() {
-  const { product: p, paymentsEnabled } = Route.useLoaderData();
+  const { product: p, paymentsEnabled, course } = Route.useLoaderData();
   const [active, setActive] = useState(0);
   // Products sold in several options: start on the first one that can be bought.
   const [variantId, setVariantId] = useState<number | null>(
@@ -186,8 +202,19 @@ function ProductPage() {
               </a>
             )}
 
+            {course?.curriculum && <CourseFacts course={course.curriculum} />}
+
             <div data-purchase-area className="pt-2 space-y-3">
-              {purchasable && paymentsEnabled ? (
+              {course?.enrolled ? (
+                <Link
+                  to="/learn/$slug"
+                  params={{ slug: p.slug }}
+                  className="inline-flex items-center gap-2 px-5 py-3 rounded bg-primary text-primary-foreground text-xs font-bold tracking-wider hover:bg-olive-deep"
+                >
+                  <PlayCircle className="w-4 h-4" aria-hidden="true" /> YOU'RE ENROLLED · GO TO
+                  COURSE
+                </Link>
+              ) : purchasable && paymentsEnabled ? (
                 <AddToCart
                   productId={p.id}
                   variantId={variant?.id ?? null}
@@ -224,6 +251,10 @@ function ProductPage() {
             <TrustRow />
           </div>
         </div>
+
+        {course?.curriculum && course.curriculum.modules.length > 0 && (
+          <CourseOutline slug={p.slug} course={course.curriculum} enrolled={course.enrolled} />
+        )}
 
         {/* Description + details */}
         <div className="mt-14 grid grid-cols-1 lg:grid-cols-3 gap-8">
@@ -362,6 +393,102 @@ function AddToCart({
             View cart
           </Link>
         </p>
+      )}
+    </div>
+  );
+}
+
+function CourseFacts({ course }: { course: Curriculum }) {
+  const facts = [
+    course.info.instructor && ["Instructor", course.info.instructor],
+    course.info.duration && ["Duration", course.info.duration],
+    course.info.level && ["Level", course.info.level],
+    course.lessonCount > 0 && [
+      "Lessons",
+      `${course.lessonCount}${course.totalMinutes ? ` · ${formatMinutes(course.totalMinutes)} of video` : ""}`,
+    ],
+  ].filter(Boolean) as [string, string][];
+  if (facts.length === 0) return null;
+  return (
+    <dl className="grid grid-cols-2 gap-x-6 gap-y-2 text-xs border-y border-border py-3">
+      {facts.map(([k, v]) => (
+        <div key={k}>
+          <dt className="text-muted-foreground">{k}</dt>
+          <dd className="font-semibold text-charcoal">{v}</dd>
+        </div>
+      ))}
+    </dl>
+  );
+}
+
+function CourseOutline({
+  slug,
+  course,
+  enrolled,
+}: {
+  slug: string;
+  course: Curriculum;
+  enrolled: boolean;
+}) {
+  return (
+    <div className="mt-14 grid grid-cols-1 lg:grid-cols-3 gap-8">
+      <div className="lg:col-span-2 page-card !p-7 space-y-5">
+        <h2 className="text-xs font-bold tracking-widest text-primary uppercase">
+          Course curriculum
+        </h2>
+        {course.modules.map((m, i) => (
+          <div key={m.id}>
+            <h3 className="font-display text-xl text-charcoal mb-2">
+              {i + 1}. {m.title}
+            </h3>
+            <ul className="divide-y divide-border text-sm">
+              {m.lessons.map((l) => (
+                <li key={l.id} className="py-2 flex items-center gap-3">
+                  {enrolled || l.isPreview ? (
+                    <PlayCircle className="w-4 h-4 text-primary shrink-0" aria-hidden="true" />
+                  ) : (
+                    <Lock className="w-4 h-4 text-muted-foreground shrink-0" aria-hidden="true" />
+                  )}
+                  {enrolled || l.isPreview ? (
+                    <Link
+                      to="/learn/$slug"
+                      params={{ slug }}
+                      search={{ lesson: l.id }}
+                      className="flex-1 text-charcoal hover:text-primary"
+                    >
+                      {l.title}
+                      {!enrolled && (
+                        <span className="ml-2 text-[10px] font-bold text-primary">
+                          FREE PREVIEW
+                        </span>
+                      )}
+                    </Link>
+                  ) : (
+                    <span className="flex-1 text-charcoal">{l.title}</span>
+                  )}
+                  {l.durationMinutes > 0 && (
+                    <span className="text-[11px] text-muted-foreground">
+                      {formatMinutes(l.durationMinutes)}
+                    </span>
+                  )}
+                </li>
+              ))}
+            </ul>
+          </div>
+        ))}
+      </div>
+      {course.info.instructor && (
+        <div className="page-card !p-7 space-y-3">
+          <h2 className="text-xs font-bold tracking-widest text-primary uppercase">
+            Your instructor
+          </h2>
+          <p className="font-display text-2xl text-charcoal">{course.info.instructor}</p>
+          {course.info.instructorBio && (
+            <p className="text-sm text-muted-foreground leading-relaxed whitespace-pre-line">
+              {course.info.instructorBio}
+            </p>
+          )}
+        </div>
       )}
     </div>
   );
