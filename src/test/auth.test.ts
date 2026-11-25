@@ -1,8 +1,10 @@
+import { randomBytes, scryptSync } from "node:crypto";
 import { afterEach, beforeEach, describe, expect, it } from "vitest";
 
 import {
   createSessionToken,
   hashPassword,
+  needsRehash,
   rateLimit,
   verifyPassword,
   verifySessionToken,
@@ -11,11 +13,26 @@ import {
 describe("password hashing", () => {
   it("verifies the right password and rejects others", () => {
     const stored = hashPassword("correct horse battery staple");
-    expect(stored.startsWith("scrypt:")).toBe(true);
+    expect(stored.startsWith("scrypt2:16:8:1:")).toBe(true);
+    expect(needsRehash(stored)).toBe(false);
     expect(stored).not.toContain("correct horse");
     expect(verifyPassword("correct horse battery staple", stored)).toBe(true);
     expect(verifyPassword("wrong", stored)).toBe(false);
     expect(verifyPassword("anything", "garbage")).toBe(false);
+  });
+
+  it("still accepts older hashes and flags them for upgrade", () => {
+    const salt = randomBytes(16);
+    const legacy = `scrypt:${salt.toString("hex")}:${scryptSync("old pass 123", salt, 64).toString("hex")}`;
+    expect(verifyPassword("old pass 123", legacy)).toBe(true);
+    expect(verifyPassword("old pass 124", legacy)).toBe(false);
+    expect(needsRehash(legacy)).toBe(true);
+  });
+
+  it("refuses tampered hash parameters (no memory bomb)", () => {
+    const parts = hashPassword("x".repeat(12)).split(":");
+    parts[1] = "30"; // N = 2^30 would need gigabytes
+    expect(verifyPassword("x".repeat(12), parts.join(":"))).toBe(false);
   });
 });
 

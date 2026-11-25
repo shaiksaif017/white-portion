@@ -5,7 +5,7 @@ import { createHash, createHmac, randomBytes, randomInt, timingSafeEqual } from 
 import type { ResultSetHeader, RowDataPacket } from "mysql2/promise";
 
 import { type AdminRole, type AdminUserView, ROLE_PERMISSIONS } from "@/lib/admin-types";
-import { hashPassword, verifyPassword } from "./auth";
+import { hashPassword, needsRehash, verifyAgainstDummy, verifyPassword } from "./auth";
 import { getDb, isDuplicateKeyError } from "./db";
 import { authConfig } from "./env";
 
@@ -120,7 +120,7 @@ export async function checkPassword(email: string, password: string): Promise<Pa
   const r = rows[0];
   if (!r || !r["active"]) {
     // spend similar time as a real check so timing doesn't reveal which emails exist
-    verifyPassword(password, hashPassword("timing-equaliser"));
+    verifyAgainstDummy(password);
     return { ok: false, error: BAD_LOGIN };
   }
   if (Number(r["is_locked"])) {
@@ -131,14 +131,32 @@ export async function checkPassword(email: string, password: string): Promise<Pa
       error: `Too many failed attempts. This account is locked for ${LOCK_MINUTES} minutes; use "Forgot password" to unlock it now.`,
     };
   }
-  if (!verifyPassword(password, String(r["password_hash"]))) {
-    const fails = Number(r["failed_attempts"]) + 1;
+  const stored = String(r["password_hash"]);
+  if (!verifyPassword(password, stored)) {
+    // atomic increment (parallel guesses can't all read the same old count);
+    // SET runs left to right, so locked_until sees the new count
     await db.query(
-      `UPDATE admin_users SET failed_attempts = ?,
-         locked_until = IF(? >= ?, UTC_TIMESTAMP() + INTERVAL ? MINUTE, locked_until) WHERE id = ?`,
-      [fails, fails, MAX_FAILS, LOCK_MINUTES, r["id"]],
+      `UPDATE admin_users SET failed_attempts = failed_attempts + 1,
+         locked_until = IF(failed_attempts >= ?, UTC_TIMESTAMP() + INTERVAL ? MINUTE, locked_until) WHERE id = ?`,
+      [MAX_FAILS, LOCK_MINUTES, r["id"]],
     );
-    return { ok: false, error: BAD_LOGIN, userId: Number(r["id"]), locked: fails >= MAX_FAILS };
+    const [after] = await db.query<RowDataPacket[]>(
+      "SELECT failed_attempts FROM admin_users WHERE id = ?",
+      [r["id"]],
+    );
+    return {
+      ok: false,
+      error: BAD_LOGIN,
+      userId: Number(r["id"]),
+      locked: Number(after[0]?.["failed_attempts"]) >= MAX_FAILS,
+    };
+  }
+  if (needsRehash(stored)) {
+    // upgrade older hashes to the current, stronger settings
+    await db.query("UPDATE admin_users SET password_hash = ? WHERE id = ?", [
+      hashPassword(password),
+      r["id"],
+    ]);
   }
   return { ok: true, user: toUser(r) };
 }

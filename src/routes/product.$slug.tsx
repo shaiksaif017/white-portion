@@ -27,6 +27,8 @@ import { whatsappUrl } from "@/lib/whatsapp";
 
 export const Route = createFileRoute("/product/$slug")({
   loader: async ({ params }) => {
+    // malformed addresses are simply "not found" (never reach the server function)
+    if (!/^[a-z0-9-]{1,120}$/.test(params.slug)) throw notFound();
     const [{ product }, status] = await Promise.all([
       getProductPage({ data: { slug: params.slug } }),
       getShopStatus(),

@@ -19,6 +19,7 @@ import { adminFor, readAdminSession, SESSION_EXPIRED } from "@/server/admin-sess
 import { audit, auditToCsv, listAudit, securityAlert } from "@/server/audit";
 import { rateLimit, resetRateLimit, SESSION_COOKIE, verifyPassword } from "@/server/auth";
 import { getDashboardStats } from "@/server/dashboard";
+import { throttle } from "@/server/throttle";
 import { isDbConfigured } from "@/server/db";
 import { authConfig, isProduction, siteUrl } from "@/server/env";
 import { sendEmail } from "@/server/mailer";
@@ -71,6 +72,7 @@ export const getAdminSession = createServerFn({ method: "GET" }).handler(
 // Sends the sign-in code. Email today; an SMS provider (e.g. MSG91 / Twilio, after DLT
 // registration) can be added here later without changing the sign-in screens.
 async function sendSignInCode(user: { id: number; email: string; name: string }): Promise<boolean> {
+  if (!(await throttle(`admin-code-send:${user.id}`, 8, 60 * 60))) return false;
   const code = await users.createLoginCode(user.id);
   const first = user.name.split(" ")[0] || "there";
   const r = await sendEmail(
@@ -134,6 +136,14 @@ export const adminSignIn = createServerFn({ method: "POST" })
         return { ok: true, next: "bootstrap" };
       }
       const email = data.email.toLowerCase();
+      if (!(await throttle(`admin-pw:${email}`, 10, 15 * 60))) {
+        void audit(null, "login.throttled", email, undefined, "alert");
+        return {
+          ok: false,
+          error:
+            'Too many sign-in attempts for this account. Wait 15 minutes or use "Forgot password".',
+        };
+      }
       const r = await users.checkPassword(email, data.password);
       if (!r.ok) {
         void audit(
@@ -176,7 +186,7 @@ export const adminResendSignInCode = createServerFn({ method: "POST" })
     if (!authConfig() || !isDbConfigured()) return NOT_SET_UP;
     const userId = users.parseMfaTicket(data.ticket);
     if (!userId) return { ok: false, error: "That took too long. Please sign in again." };
-    if (!rateLimit(`admin-code-resend:${userId}`, 3, 15 * 60_000)) {
+    if (!(await throttle(`admin-code-resend:${userId}`, 3, 15 * 60))) {
       return { ok: false, error: "Too many codes requested. Please wait 15 minutes." };
     }
     const user = await users.getUser(userId);
@@ -197,6 +207,12 @@ export const adminSignInCode = createServerFn({ method: "POST" })
     }
     const userId = users.parseMfaTicket(data.ticket);
     if (!userId) return { ok: false, error: "That took too long. Please sign in again." };
+    if (!(await throttle(`admin-code-try:${userId}`, 6, 15 * 60))) {
+      return {
+        ok: false,
+        error: "Too many wrong codes. Please wait 15 minutes and sign in again.",
+      };
+    }
     try {
       const user = await users.getUser(userId);
       if (!user) return { ok: false, error: "Please sign in again." };
@@ -358,7 +374,7 @@ export const adminForgotPassword = createServerFn({ method: "POST" })
     if (!authConfig() || !isDbConfigured()) return NOT_SET_UP;
     if (
       !rateLimit(`admin-forgot-ip:${ip()}`, 5, 15 * 60_000) ||
-      !rateLimit(`admin-forgot:${data.email}`, 3, 60 * 60_000)
+      !(await throttle(`admin-forgot:${data.email}`, 3, 60 * 60))
     ) {
       return { ok: false, error: "Too many requests. Please wait and try again." };
     }

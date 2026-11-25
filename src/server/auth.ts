@@ -1,10 +1,8 @@
-// Admin authentication, entirely on the server.
-// - The password is never stored: only a scrypt hash in ADMIN_PASSWORD_HASH
-//   (create one with `npm run hash-password`).
-// - A successful login sets a signed, HttpOnly, Secure, SameSite=Strict cookie
-//   that browser JavaScript cannot read. It expires after SESSION_HOURS.
-// - Changing the password (or SESSION_SECRET) signs everyone out.
-// - Repeated wrong passwords from one IP are locked out for a while.
+// Password hashing, legacy session helpers and rate limiting (server only).
+// - Passwords are never stored: only a salted scrypt hash.
+// - New hashes use stronger scrypt settings (N=2^16, r=8, p=1, about 64 MB of memory
+//   per check), which makes stolen hashes far slower to crack. Older hashes still
+//   verify and are upgraded automatically at the next successful sign-in.
 import { createHmac, randomBytes, scryptSync, timingSafeEqual } from "node:crypto";
 
 import { authConfig } from "./env";
@@ -13,21 +11,68 @@ export const SESSION_COOKIE = "wpw_admin_session";
 export const SESSION_HOURS = 8;
 
 const SCRYPT_KEYLEN = 64;
+const LOG_N = 16; // N = 65536
+const R = 8;
+const P = 1;
+const MAXMEM = 160 * 1024 * 1024;
 
+// Format: "scrypt2:<logN>:<r>:<p>:<saltHex>:<hashHex>"
 export function hashPassword(password: string): string {
   const salt = randomBytes(16);
-  const hash = scryptSync(password, salt, SCRYPT_KEYLEN);
-  return `scrypt:${salt.toString("hex")}:${hash.toString("hex")}`;
+  const hash = scryptSync(password, salt, SCRYPT_KEYLEN, {
+    N: 2 ** LOG_N,
+    r: R,
+    p: P,
+    maxmem: MAXMEM,
+  });
+  return `scrypt2:${LOG_N}:${R}:${P}:${salt.toString("hex")}:${hash.toString("hex")}`;
 }
 
 export function verifyPassword(password: string, stored: string): boolean {
-  const [scheme, saltHex, hashHex] = stored.split(":");
-  if (scheme !== "scrypt" || !saltHex || !hashHex) return false;
-  const expected = Buffer.from(hashHex, "hex");
-  if (expected.length !== SCRYPT_KEYLEN) return false;
-  const actual = scryptSync(password, Buffer.from(saltHex, "hex"), SCRYPT_KEYLEN);
-  return timingSafeEqual(actual, expected);
+  const parts = stored.split(":");
+  try {
+    if (parts[0] === "scrypt2" && parts.length === 6) {
+      const [, logN, r, p, saltHex, hashHex] = parts;
+      const n = Number(logN);
+      const rr = Number(r);
+      const pp = Number(p);
+      // refuse silly parameters from a tampered hash (denial of service)
+      if (!(n >= 14 && n <= 20 && rr >= 1 && rr <= 16 && pp >= 1 && pp <= 4)) return false;
+      const expected = Buffer.from(hashHex!, "hex");
+      if (expected.length !== SCRYPT_KEYLEN) return false;
+      const actual = scryptSync(password, Buffer.from(saltHex!, "hex"), SCRYPT_KEYLEN, {
+        N: 2 ** n,
+        r: rr,
+        p: pp,
+        maxmem: MAXMEM * 4,
+      });
+      return timingSafeEqual(actual, expected);
+    }
+    // legacy "scrypt:<salt>:<hash>" with Node's default settings
+    const [scheme, saltHex, hashHex] = parts;
+    if (scheme !== "scrypt" || !saltHex || !hashHex) return false;
+    const expected = Buffer.from(hashHex, "hex");
+    if (expected.length !== SCRYPT_KEYLEN) return false;
+    const actual = scryptSync(password, Buffer.from(saltHex, "hex"), SCRYPT_KEYLEN);
+    return timingSafeEqual(actual, expected);
+  } catch {
+    return false;
+  }
 }
+
+export function needsRehash(stored: string): boolean {
+  return !stored.startsWith(`scrypt2:${LOG_N}:${R}:${P}:`);
+}
+
+// A real hash to check against when an account doesn't exist, so the response takes
+// the same time either way (no clue which emails have admin accounts).
+let dummy: string | null = null;
+export function verifyAgainstDummy(password: string): void {
+  dummy ??= hashPassword(randomBytes(16).toString("hex"));
+  verifyPassword(password, dummy);
+}
+
+// ---------- legacy shared-password session helpers (kept for tests / first-time setup) ----------
 
 function sign(payload: string, secret: string, passwordHash: string): string {
   return createHmac("sha256", `${secret}|${passwordHash}`).update(payload).digest("base64url");
@@ -53,7 +98,10 @@ export function verifySessionToken(token: string | undefined, now = Date.now()):
   return Number.isFinite(expires) && expires > now;
 }
 
-// ---------- simple in-memory rate limiting (single server process) ----------
+// ---------- fast in-memory rate limiting (per server process) ----------
+// Used as a first, cheap layer. Anything security-critical also uses the
+// database-backed throttle() in ./throttle.ts, which survives restarts and
+// can't be dodged by faking an IP address.
 
 interface Bucket {
   count: number;

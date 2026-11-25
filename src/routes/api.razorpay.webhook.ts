@@ -4,6 +4,7 @@
 // "payment.captured" and "order.paid".
 import { createFileRoute } from "@tanstack/react-router";
 
+import { readBodyLimited } from "@/server/body-limit";
 import { recordPayment } from "@/server/checkout";
 import { getWebhookSecret, verifyWebhookSignature } from "@/server/razorpay";
 
@@ -17,9 +18,13 @@ interface WebhookBody {
 export const Route = createFileRoute("/api/razorpay/webhook")({
   server: {
     handlers: {
+      // only POST is meaningful here; anything else is refused outright
+      GET: () => new Response("Method not allowed", { status: 405, headers: { allow: "POST" } }),
       POST: async ({ request }) => {
-        const raw = await request.text();
-        if (raw.length > 200_000) return new Response("Too large", { status: 413 });
+        // Razorpay events are a few KB; refuse anything big before reading it all.
+        const rawBody = await readBodyLimited(request, 64_000);
+        if (!rawBody) return new Response("Too large", { status: 413 });
+        const raw = rawBody.toString("utf8");
         const signature = request.headers.get("x-razorpay-signature") ?? "";
         try {
           const secret = await getWebhookSecret();

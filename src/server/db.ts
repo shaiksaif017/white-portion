@@ -303,6 +303,11 @@ const SCHEMA: string[] = [
     KEY idx_audit_time (created_at),
     KEY idx_audit_action (action)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+  `CREATE TABLE IF NOT EXISTS rate_limits (
+    bucket CHAR(64) NOT NULL PRIMARY KEY,
+    window_start BIGINT NOT NULL,
+    hits INT NOT NULL
+  ) ENGINE=InnoDB`,
   `CREATE TABLE IF NOT EXISTS lesson_progress (
     email VARCHAR(254) NOT NULL,
     lesson_id INT NOT NULL,

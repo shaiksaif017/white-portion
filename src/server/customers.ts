@@ -67,13 +67,16 @@ export async function verifyLoginCode(email: string, code: string): Promise<Veri
   const row = rows[0];
   const expired = { ok: false as const, error: "That code has expired. Please request a new one." };
   if (!row) return expired;
-  if (Number(row["attempts"]) >= MAX_ATTEMPTS) {
+  // Reserve this attempt before checking, atomically, so a burst of parallel guesses
+  // still gets only MAX_ATTEMPTS tries at a code.
+  const [slot] = await db.query<ResultSetHeader>(
+    "UPDATE customer_login_codes SET attempts = attempts + 1 WHERE id = ? AND attempts < ?",
+    [row["id"], MAX_ATTEMPTS],
+  );
+  if (slot.affectedRows !== 1) {
     return { ok: false, error: "Too many wrong codes. Please request a new one." };
   }
   if (!safeEqual(String(row["code_hash"]), codeHash(email, code))) {
-    await db.query("UPDATE customer_login_codes SET attempts = attempts + 1 WHERE id = ?", [
-      row["id"],
-    ]);
     return { ok: false, error: "That code isn't right. Please check the email and try again." };
   }
   // single use: only the request that flips used 0 -> 1 succeeds

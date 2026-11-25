@@ -21,6 +21,13 @@ export const Route = createFileRoute("/media/$id")({
               // A file id always points at the same bytes, so it can be cached for a year.
               "cache-control": "public, max-age=31536000, immutable",
               "x-content-type-options": "nosniff",
+              // only our own pages may embed these files, and they can never run scripts
+              "cross-origin-resource-policy": "same-origin",
+              ...(info.mime.startsWith("image/")
+                ? { "content-security-policy": "default-src 'none'; img-src 'self'; sandbox" }
+                : {
+                    "content-disposition": `inline; filename="${info.name.replace(/[^\w.\- ]+/g, "_")}"`,
+                  }),
             },
           });
         } catch (error) {

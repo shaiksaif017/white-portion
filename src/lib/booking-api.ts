@@ -22,6 +22,7 @@ import {
   buildCustomerAcknowledgement,
 } from "@/lib/notifications";
 import { rateLimit } from "@/server/auth";
+import { throttle } from "@/server/throttle";
 import * as bookings from "@/server/bookings";
 import { isDbConfigured } from "@/server/db";
 import { adminFor } from "@/server/admin-session";
@@ -87,6 +88,13 @@ export const submitBooking = createServerFn({ method: "POST" })
       return {
         ok: false,
         error: "Too many booking attempts. Please try again later or contact us on WhatsApp.",
+      };
+    }
+    if (!(await throttle(`book-email:${parsed.data.email.toLowerCase()}`, 3, 24 * 60 * 60))) {
+      return {
+        ok: false,
+        error:
+          "You've already sent several requests today. We'll be in touch, or message us on WhatsApp.",
       };
     }
     try {

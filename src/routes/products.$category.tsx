@@ -26,6 +26,8 @@ export const Route = createFileRoute("/products/$category")({
   }),
   loaderDeps: ({ search }) => search,
   loader: async ({ params, deps }) => {
+    // malformed addresses are simply "not found" (never reach the server function)
+    if (!/^[a-z0-9-]{1,120}$/.test(params.category)) throw notFound();
     const data = await getCategoryPage({
       data: {
         slug: params.category,

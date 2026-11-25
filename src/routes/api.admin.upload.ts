@@ -7,6 +7,7 @@ import { createFileRoute } from "@tanstack/react-router";
 
 import { adminFor, isSameOrigin } from "@/server/admin-session";
 import { rateLimit } from "@/server/auth";
+import { readBodyLimited } from "@/server/body-limit";
 import {
   DOWNLOAD_TYPES,
   IMAGE_TYPES,
@@ -26,6 +27,8 @@ function json(body: unknown, status = 200) {
 export const Route = createFileRoute("/api/admin/upload")({
   server: {
     handlers: {
+      // only POST is meaningful here; anything else is refused outright
+      GET: () => new Response("Method not allowed", { status: 405, headers: { allow: "POST" } }),
       POST: async ({ request }) => {
         if (!isSameOrigin(request)) return json({ ok: false, error: "Bad origin." }, 403);
         const admin = await adminFor("products");
@@ -49,7 +52,12 @@ export const Route = createFileRoute("/api/admin/upload")({
             413,
           );
 
-        const data = Buffer.from(await request.arrayBuffer());
+        const data = await readBodyLimited(request, max);
+        if (!data)
+          return json(
+            { ok: false, error: `File is too large (max ${max / 1024 / 1024} MB).` },
+            413,
+          );
         if (data.length === 0) return json({ ok: false, error: "The file is empty." }, 400);
         if (data.length > max)
           return json(

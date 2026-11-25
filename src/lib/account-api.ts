@@ -19,6 +19,7 @@ import {
 import { adminFor } from "@/server/admin-session";
 import { audit } from "@/server/audit";
 import { rateLimit } from "@/server/auth";
+import { throttle } from "@/server/throttle";
 import * as courses from "@/server/courses";
 import * as customers from "@/server/customers";
 import { getDb, isDbConfigured } from "@/server/db";
@@ -49,7 +50,7 @@ export const requestLoginCode = createServerFn({ method: "POST" })
     if (!isDbConfigured() || !customers.accountsAvailable()) return UNAVAILABLE;
     if (
       !rateLimit(`code-ip:${ip()}`, 10, 15 * 60_000) ||
-      !rateLimit(`code-email:${data.email}`, 4, 15 * 60_000)
+      !(await throttle(`code-email:${data.email}`, 5, 60 * 60))
     ) {
       return { ok: false, error: "Too many codes requested. Please wait 15 minutes." };
     }
@@ -91,7 +92,10 @@ export const verifyLoginCode = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({ email: EmailSchema, code: LoginCodeSchema }).parse(d))
   .handler(async ({ data }): Promise<{ ok: true } | Fail> => {
     if (!isDbConfigured() || !customers.accountsAvailable()) return UNAVAILABLE;
-    if (!rateLimit(`verify-ip:${ip()}`, 20, 15 * 60_000)) {
+    if (
+      !rateLimit(`verify-ip:${ip()}`, 20, 15 * 60_000) ||
+      !(await throttle(`verify-email:${data.email}`, 10, 15 * 60))
+    ) {
       return { ok: false, error: "Too many attempts. Please wait 15 minutes." };
     }
     try {

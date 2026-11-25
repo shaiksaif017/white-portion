@@ -21,6 +21,7 @@ import {
 import { adminFor } from "@/server/admin-session";
 import { securityAlert } from "@/server/audit";
 import { rateLimit } from "@/server/auth";
+import { throttle } from "@/server/throttle";
 import * as checkout from "@/server/checkout";
 import * as coupons from "@/server/coupons";
 import { revokeForOrder } from "@/server/courses";
@@ -141,6 +142,9 @@ export const startCheckout = createServerFn({ method: "POST" })
     if (!isDbConfigured()) return UNAVAILABLE;
     if (!rateLimit(`checkout:${clientIp()}`, 15, 15 * 60_000)) {
       return { ok: false, error: "Too many attempts. Please wait a few minutes and try again." };
+    }
+    if (!(await throttle(`checkout-email:${parsed.data.email.toLowerCase()}`, 20, 60 * 60))) {
+      return { ok: false, error: "Too many checkout attempts. Please wait a while and try again." };
     }
     try {
       return await checkout.startCheckout(parsed.data);

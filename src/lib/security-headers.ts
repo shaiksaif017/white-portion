@@ -57,6 +57,7 @@ export function securityHeaders(url: URL): Record<string, string> {
     )
   ) {
     headers["Cache-Control"] = "private, no-store";
+    headers["X-Robots-Tag"] = "noindex, nofollow";
   }
   return headers;
 }

@@ -21,6 +21,8 @@ export const Route = createFileRoute("/learn/$slug")({
   validateSearch: z.object({ lesson: z.number().int().positive().optional().catch(undefined) }),
   loaderDeps: ({ search }) => ({ lesson: search.lesson }),
   loader: async ({ params, deps }) => {
+    // malformed addresses are simply "not found" (never reach the server function)
+    if (!/^[a-z0-9-]{1,120}$/.test(params.slug)) throw notFound();
     const data = await getLearnPage({
       data: { slug: params.slug, ...(deps.lesson ? { lessonId: deps.lesson } : {}) },
     });
