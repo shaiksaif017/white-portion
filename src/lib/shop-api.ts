@@ -13,7 +13,7 @@ import {
   DEFAULT_CATEGORIES,
   PRODUCT_SORTS,
 } from "@/lib/shop-types";
-import { isAdminRequest } from "@/server/admin-session";
+import { adminFor } from "@/server/admin-session";
 import * as catalogue from "@/server/catalogue";
 import * as sampleData from "@/server/sample-data";
 import { isDbConfigured } from "@/server/db";
@@ -160,7 +160,8 @@ export const adminGetCatalogue = createServerFn({ method: "GET" }).handler(
   async (): Promise<
     { ok: true; categories: ProductCategory[]; products: AdminProduct[] } | Fail
   > => {
-    if (!isAdminRequest()) return unauthorized;
+    const admin = await adminFor("products");
+    if (!admin.ok) return admin;
     try {
       const [categories, products] = await Promise.all([
         catalogue.listCategories(),
@@ -177,9 +178,20 @@ export const adminGetCatalogue = createServerFn({ method: "GET" }).handler(
 export const adminSaveProduct = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => d)
   .handler(async ({ data }): Promise<{ ok: true; id: number } | Fail> => {
-    if (!isAdminRequest()) return unauthorized;
+    const admin = await adminFor("products");
+    if (!admin.ok) return admin;
     try {
-      return await catalogue.saveProduct(data as ProductInput);
+      const input = data as ProductInput;
+      const before = input.id ? await catalogue.getAdminProduct(input.id) : null;
+      const res = await catalogue.saveProduct(input);
+      if (res.ok) {
+        await admin.log(
+          before ? "product.updated" : "product.created",
+          `#${res.id} ${String(input.name).slice(0, 120)}`,
+          productChanges(before, input),
+        );
+      }
+      return res;
     } catch (error) {
       console.error("[admin] save product failed", error);
       return { ok: false, error: "Could not save the product." };
@@ -189,9 +201,13 @@ export const adminSaveProduct = createServerFn({ method: "POST" })
 export const adminDeleteProduct = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({ id: z.number().int().positive() }).parse(d))
   .handler(async ({ data }): Promise<{ ok: true } | Fail> => {
-    if (!isAdminRequest()) return unauthorized;
+    const admin = await adminFor("products");
+    if (!admin.ok) return admin;
     try {
-      return await catalogue.deleteProduct(data.id);
+      const before = await catalogue.getAdminProduct(data.id);
+      const res = await catalogue.deleteProduct(data.id);
+      if (res.ok) await admin.log("product.deleted", `#${data.id} ${before?.name ?? ""}`);
+      return res;
     } catch (error) {
       console.error("[admin] delete product failed", error);
       return { ok: false, error: "Could not delete the product." };
@@ -201,9 +217,14 @@ export const adminDeleteProduct = createServerFn({ method: "POST" })
 export const adminSaveCategory = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => d)
   .handler(async ({ data }): Promise<{ ok: true; id: number } | Fail> => {
-    if (!isAdminRequest()) return unauthorized;
+    const admin = await adminFor("products");
+    if (!admin.ok) return admin;
     try {
-      return await catalogue.saveCategory(data as CategoryInput);
+      const input = data as CategoryInput;
+      const res = await catalogue.saveCategory(input);
+      if (res.ok)
+        await admin.log(input.id ? "category.updated" : "category.created", String(input.name));
+      return res;
     } catch (error) {
       console.error("[admin] save category failed", error);
       return {
@@ -219,9 +240,12 @@ export const adminSaveCategory = createServerFn({ method: "POST" })
 export const adminDeleteCategory = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({ id: z.number().int().positive() }).parse(d))
   .handler(async ({ data }): Promise<{ ok: true } | Fail> => {
-    if (!isAdminRequest()) return unauthorized;
+    const admin = await adminFor("products");
+    if (!admin.ok) return admin;
     try {
-      return await catalogue.deleteCategory(data.id);
+      const res = await catalogue.deleteCategory(data.id);
+      if (res.ok) await admin.log("category.deleted", `#${data.id}`);
+      return res;
     } catch (error) {
       console.error("[admin] delete category failed", error);
       return { ok: false, error: "Could not delete the category." };
@@ -234,7 +258,8 @@ export const adminSampleStatus = createServerFn({ method: "GET" }).handler(
   async (): Promise<
     { ok: true; counts: { products: number; orders: number; coupons: number } } | Fail
   > => {
-    if (!isAdminRequest()) return unauthorized;
+    const admin = await adminFor("products");
+    if (!admin.ok) return admin;
     try {
       return { ok: true, counts: await sampleData.sampleCounts() };
     } catch (error) {
@@ -246,9 +271,16 @@ export const adminSampleStatus = createServerFn({ method: "GET" }).handler(
 
 export const adminLoadSampleData = createServerFn({ method: "POST" }).handler(
   async (): Promise<{ ok: true; products: number; orders: number; coupons: number } | Fail> => {
-    if (!isAdminRequest()) return unauthorized;
+    const admin = await adminFor("products");
+    if (!admin.ok) return admin;
     try {
-      return await sampleData.loadSampleData();
+      const res = await sampleData.loadSampleData();
+      if (res.ok)
+        await admin.log("sample_data.loaded", undefined, {
+          products: res.products,
+          orders: res.orders,
+        });
+      return res;
     } catch (error) {
       console.error("[admin] load sample data failed", error);
       return {
@@ -261,12 +293,41 @@ export const adminLoadSampleData = createServerFn({ method: "POST" }).handler(
 
 export const adminRemoveSampleData = createServerFn({ method: "POST" }).handler(
   async (): Promise<{ ok: true; products: number; orders: number; coupons: number } | Fail> => {
-    if (!isAdminRequest()) return unauthorized;
+    const admin = await adminFor("products");
+    if (!admin.ok) return admin;
     try {
-      return { ok: true, ...(await sampleData.removeSampleData()) };
+      const res = await sampleData.removeSampleData();
+      await admin.log("sample_data.removed", undefined, res);
+      return { ok: true, ...res };
     } catch (error) {
       console.error("[admin] remove sample data failed", error);
       return { ok: false, error: "Could not remove sample data." };
     }
   },
 );
+
+// Summary of what changed on a product, for the audit log (prices in rupees).
+function productChanges(before: AdminProduct | null, after: ProductInput): Record<string, unknown> {
+  const rupees = (p: number | null | undefined) => (p == null ? null : p / 100);
+  if (!before) return { price: after.priceRupees, stock: after.stock, status: after.status };
+  const out: Record<string, unknown> = {};
+  const diff = (k: string, a: unknown, b: unknown) => {
+    if (JSON.stringify(a) !== JSON.stringify(b)) out[k] = `${String(a)} → ${String(b)}`;
+  };
+  diff("name", before.name, after.name);
+  diff("price", rupees(before.pricePaise), after.priceRupees);
+  diff("wasPrice", rupees(before.compareAtPaise), after.compareAtRupees);
+  diff("stock", before.stock, after.stock);
+  diff("status", before.status, after.status);
+  diff("featured", before.isFeatured, after.isFeatured ?? false);
+  if (after.gstRateBps !== undefined)
+    diff("gstPercent", before.gstRateBps / 100, after.gstRateBps / 100);
+  const beforeOpts = before.variants
+    .map((x) => `${x.name}:${x.pricePaise / 100}:${x.stock ?? "-"}`)
+    .join(", ");
+  const afterOpts = (after.variants ?? [])
+    .map((x) => `${x.name}:${x.priceRupees}:${x.stock ?? "-"}`)
+    .join(", ");
+  diff("options", beforeOpts, afterOpts);
+  return out;
+}

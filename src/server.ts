@@ -2,6 +2,17 @@ import "./lib/error-capture";
 
 import { consumeLastCapturedError } from "./lib/error-capture";
 import { renderErrorPage } from "./lib/error-page";
+import { withSecurityHeaders } from "./lib/security-headers";
+
+// The address the visitor used (the hosting proxy may forward to an internal address).
+function publicUrl(request: Request): URL {
+  const url = new URL(request.url);
+  const host = request.headers.get("x-forwarded-host")?.split(",")[0]?.trim();
+  const proto = request.headers.get("x-forwarded-proto")?.split(",")[0]?.trim();
+  if (host) url.host = host;
+  if (proto === "https" || proto === "http") url.protocol = `${proto}:`;
+  return url;
+}
 
 type ServerEntry = {
   fetch: (request: Request, env: unknown, ctx: unknown) => Promise<Response> | Response;
@@ -52,13 +63,19 @@ export default {
     try {
       const handler = await getServerEntry();
       const response = await handler.fetch(request, env, ctx);
-      return await normalizeCatastrophicSsrResponse(response);
+      return withSecurityHeaders(
+        await normalizeCatastrophicSsrResponse(response),
+        publicUrl(request),
+      );
     } catch (error) {
       console.error(error);
-      return new Response(renderErrorPage(), {
-        status: 500,
-        headers: { "content-type": "text/html; charset=utf-8" },
-      });
+      return withSecurityHeaders(
+        new Response(renderErrorPage(), {
+          status: 500,
+          headers: { "content-type": "text/html; charset=utf-8" },
+        }),
+        publicUrl(request),
+      );
     }
   },
 };

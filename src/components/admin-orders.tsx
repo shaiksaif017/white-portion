@@ -30,7 +30,15 @@ const label = "block text-xs font-bold text-charcoal mb-1";
 
 type View = "paid" | "unpaid" | "all";
 
-export function AdminOrders({ onSessionExpired }: { onSessionExpired: (msg: string) => void }) {
+export function AdminOrders({
+  onSessionExpired,
+  canSettings = true,
+  canRefund = true,
+}: {
+  onSessionExpired: (msg: string) => void;
+  canSettings?: boolean; // the server checks again; this only hides buttons
+  canRefund?: boolean;
+}) {
   const [orders, setOrders] = useState<OrderRecord[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -114,14 +122,16 @@ export function AdminOrders({ onSessionExpired }: { onSessionExpired: (msg: stri
           </p>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={() => setShowSettings((s) => !s)}
-          >
-            <CreditCard className="w-3.5 h-3.5 mr-1.5" /> Payment settings
-          </Button>
+          {canSettings && (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => setShowSettings((s) => !s)}
+            >
+              <CreditCard className="w-3.5 h-3.5 mr-1.5" /> Payment settings
+            </Button>
+          )}
           <Button type="button" variant="outline" size="sm" onClick={() => void load()}>
             <RefreshCw className="w-3.5 h-3.5 mr-1.5" /> Refresh
           </Button>
@@ -204,6 +214,7 @@ export function AdminOrders({ onSessionExpired }: { onSessionExpired: (msg: stri
                   onToggle={() => setOpenId(openId === o.id ? null : o.id)}
                   onChange={replace}
                   onFail={fail}
+                  canRefund={canRefund}
                 />
               ))}
             </tbody>
@@ -234,12 +245,14 @@ function OrderRow({
   onToggle,
   onChange,
   onFail,
+  canRefund,
 }: {
   order: OrderRecord;
   open: boolean;
   onToggle: () => void;
   onChange: (o: OrderRecord) => void;
   onFail: (msg: string) => void;
+  canRefund: boolean;
 }) {
   const [form, setForm] = useState({
     fulfilmentStatus: o.fulfilmentStatus,
@@ -493,7 +506,7 @@ function OrderRow({
                       <Button type="button" size="sm" disabled={busy} onClick={() => void save()}>
                         <Save className="w-3.5 h-3.5 mr-1.5" /> Save
                       </Button>
-                      {o.paymentStatus === "paid" && (
+                      {o.paymentStatus === "paid" && canRefund && (
                         <Button
                           type="button"
                           size="sm"

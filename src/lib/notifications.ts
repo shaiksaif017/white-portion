@@ -16,7 +16,8 @@ export type NotificationType =
   | "WHATSAPP_CONFIRMATION"
   | "WHATSAPP_CANCELLATION"
   | "WHATSAPP_TEST"
-  | "LOGIN_CODE";
+  | "LOGIN_CODE"
+  | "ADMIN_SECURITY";
 
 export interface NotificationLog {
   id: string;

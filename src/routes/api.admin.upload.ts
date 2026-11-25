@@ -5,7 +5,7 @@
 //   preview  = public free sample of an e-book (PDF only)
 import { createFileRoute } from "@tanstack/react-router";
 
-import { isAdminRequest, isSameOrigin } from "@/server/admin-session";
+import { adminFor, isSameOrigin } from "@/server/admin-session";
 import { rateLimit } from "@/server/auth";
 import {
   DOWNLOAD_TYPES,
@@ -28,8 +28,8 @@ export const Route = createFileRoute("/api/admin/upload")({
     handlers: {
       POST: async ({ request }) => {
         if (!isSameOrigin(request)) return json({ ok: false, error: "Bad origin." }, 403);
-        if (!isAdminRequest())
-          return json({ ok: false, error: "Your session has expired. Please log in again." }, 401);
+        const admin = await adminFor("products");
+        if (!admin.ok) return json(admin, 401);
         if (!rateLimit("admin-upload", 200, 60 * 60_000))
           return json({ ok: false, error: "Too many uploads. Try again later." }, 429);
 

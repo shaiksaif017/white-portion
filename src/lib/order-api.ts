@@ -18,7 +18,8 @@ import {
   ShopSettingsSchema,
   toPublicOrder,
 } from "@/lib/order-types";
-import { isAdminRequest } from "@/server/admin-session";
+import { adminFor } from "@/server/admin-session";
+import { securityAlert } from "@/server/audit";
 import { rateLimit } from "@/server/auth";
 import * as checkout from "@/server/checkout";
 import * as coupons from "@/server/coupons";
@@ -204,7 +205,8 @@ export const getCustomerOrder = createServerFn({ method: "GET" })
 
 export const adminGetOrders = createServerFn({ method: "GET" }).handler(
   async (): Promise<{ ok: true; orders: OrderRecord[] } | Fail> => {
-    if (!isAdminRequest()) return unauthorized;
+    const admin = await adminFor("orders");
+    if (!admin.ok) return admin;
     try {
       return { ok: true, orders: await orders.listOrders(1000) };
     } catch (error) {
@@ -228,7 +230,8 @@ export const adminUpdateOrder = createServerFn({ method: "POST" })
   )
   .handler(
     async ({ data }): Promise<{ ok: true; order: OrderRecord; emailed: string | null } | Fail> => {
-      if (!isAdminRequest()) return unauthorized;
+      const admin = await adminFor("orders");
+      if (!admin.ok) return admin;
       try {
         const res = await orders.updateOrderAdmin(data.id, {
           fulfilmentStatus: data.fulfilmentStatus as OrderRecord["fulfilmentStatus"],
@@ -246,6 +249,16 @@ export const adminUpdateOrder = createServerFn({ method: "POST" })
             emailed = r.status;
           }
         }
+        await admin.log("order.updated", res.after.orderNumber, {
+          status:
+            res.before.fulfilmentStatus !== res.after.fulfilmentStatus
+              ? `${res.before.fulfilmentStatus} → ${res.after.fulfilmentStatus}`
+              : undefined,
+          tracking:
+            res.before.trackingInfo !== res.after.trackingInfo ? res.after.trackingInfo : undefined,
+          notesChanged: res.before.adminNotes !== res.after.adminNotes || undefined,
+          customerEmailed: emailed ?? undefined,
+        });
         return { ok: true, order: res.after, emailed };
       } catch (error) {
         console.error("[admin] update order failed", error);
@@ -257,11 +270,14 @@ export const adminUpdateOrder = createServerFn({ method: "POST" })
 export const adminCheckPayment = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({ id: z.number().int().positive() }).parse(d))
   .handler(async ({ data }): Promise<{ ok: true; order: OrderRecord } | Fail> => {
-    if (!isAdminRequest()) return unauthorized;
+    const admin = await adminFor("orders");
+    if (!admin.ok) return admin;
     try {
       const order = await orders.getOrderById(data.id);
       if (!order) return { ok: false, error: "Order not found." };
-      return { ok: true, order: await checkout.reconcile(order) };
+      const after = await checkout.reconcile(order);
+      await admin.log("order.payment_checked", order.orderNumber, { result: after.paymentStatus });
+      return { ok: true, order: after };
     } catch (error) {
       console.error("[admin] check payment failed", error);
       return { ok: false, error: "Could not reach Razorpay. Please try again." };
@@ -271,13 +287,15 @@ export const adminCheckPayment = createServerFn({ method: "POST" })
 export const adminMarkRefunded = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({ id: z.number().int().positive() }).parse(d))
   .handler(async ({ data }): Promise<{ ok: true } | Fail> => {
-    if (!isAdminRequest()) return unauthorized;
+    const admin = await adminFor("refunds");
+    if (!admin.ok) return admin;
     try {
       const order = await orders.getOrderById(data.id);
       if (!order || order.paymentStatus !== "paid")
         return { ok: false, error: "Only paid orders can be marked refunded." };
       await orders.setPaymentStatus(data.id, "refunded");
       await revokeForOrder(data.id); // refunded courses lose access
+      await admin.log("order.refunded", order.orderNumber, { totalPaise: order.totalPaise });
       return { ok: true };
     } catch (error) {
       console.error("[admin] mark refunded failed", error);
@@ -287,8 +305,10 @@ export const adminMarkRefunded = createServerFn({ method: "POST" })
 
 export const adminExportOrdersCsv = createServerFn({ method: "GET" }).handler(
   async (): Promise<{ ok: true; csv: string } | Fail> => {
-    if (!isAdminRequest()) return unauthorized;
+    const admin = await adminFor("orders");
+    if (!admin.ok) return admin;
     try {
+      await admin.log("orders.exported");
       return { ok: true, csv: orders.ordersToCsv(await orders.listOrders(100_000)) };
     } catch (error) {
       console.error("[admin] export orders failed", error);
@@ -328,7 +348,8 @@ async function paymentSettingsView(): Promise<PaymentSettingsView> {
 
 export const adminGetPaymentSettings = createServerFn({ method: "GET" }).handler(
   async (): Promise<{ ok: true; settings: PaymentSettingsView } | Fail> => {
-    if (!isAdminRequest()) return unauthorized;
+    const admin = await adminFor("settings");
+    if (!admin.ok) return admin;
     try {
       return { ok: true, settings: await paymentSettingsView() };
     } catch (error) {
@@ -351,7 +372,8 @@ export const adminSaveRazorpayKeys = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data }): Promise<{ ok: true; settings: PaymentSettingsView } | Fail> => {
-    if (!isAdminRequest()) return unauthorized;
+    const admin = await adminFor("settings");
+    if (!admin.ok) return admin;
     if (!rateLimit(`rzp-keys:${clientIp()}`, 10, 15 * 60_000)) {
       return { ok: false, error: "Too many attempts. Please wait 15 minutes." };
     }
@@ -368,6 +390,10 @@ export const adminSaveRazorpayKeys = createServerFn({ method: "POST" })
     }
     try {
       await saveRazorpayKeys(data);
+      await admin.log("settings.razorpay_keys_changed", undefined, { mode: keyMode(data.keyId) });
+      void securityAlert("Payment keys changed", [
+        `${admin.user.email} replaced the Razorpay keys (${keyMode(data.keyId)} mode).`,
+      ]);
       return { ok: true, settings: await paymentSettingsView() };
     } catch (error) {
       console.error("[admin] save razorpay keys failed", error);
@@ -378,9 +404,11 @@ export const adminSaveRazorpayKeys = createServerFn({ method: "POST" })
 export const adminSaveWebhookSecret = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({ secret: z.string().trim().min(6).max(200) }).parse(d))
   .handler(async ({ data }): Promise<{ ok: true; settings: PaymentSettingsView } | Fail> => {
-    if (!isAdminRequest()) return unauthorized;
+    const admin = await adminFor("settings");
+    if (!admin.ok) return admin;
     try {
       await saveWebhookSecret(data.secret);
+      await admin.log("settings.webhook_secret_changed");
       return { ok: true, settings: await paymentSettingsView() };
     } catch (error) {
       console.error("[admin] save webhook secret failed", error);
@@ -391,7 +419,8 @@ export const adminSaveWebhookSecret = createServerFn({ method: "POST" })
 export const adminSaveShopSettings = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => ShopSettingsSchema.parse(d))
   .handler(async ({ data }): Promise<{ ok: true; settings: PaymentSettingsView } | Fail> => {
-    if (!isAdminRequest()) return unauthorized;
+    const admin = await adminFor("settings");
+    if (!admin.ok) return admin;
     try {
       await orders.saveShopSettings({
         shippingFeePaise: Math.round(data.shippingFeeRupees * 100),
@@ -399,6 +428,10 @@ export const adminSaveShopSettings = createServerFn({ method: "POST" })
           data.freeShippingFromRupees === null
             ? null
             : Math.round(data.freeShippingFromRupees * 100),
+      });
+      await admin.log("settings.shipping", undefined, {
+        shippingFeeRupees: data.shippingFeeRupees,
+        freeShippingFromRupees: data.freeShippingFromRupees,
       });
       return { ok: true, settings: await paymentSettingsView() };
     } catch (error) {
@@ -411,7 +444,8 @@ export const adminSaveShopSettings = createServerFn({ method: "POST" })
 
 export const adminListCoupons = createServerFn({ method: "GET" }).handler(
   async (): Promise<{ ok: true; coupons: AdminCoupon[] } | Fail> => {
-    if (!isAdminRequest()) return unauthorized;
+    const admin = await adminFor("products");
+    if (!admin.ok) return admin;
     try {
       return { ok: true, coupons: await coupons.listCoupons() };
     } catch (error) {
@@ -424,9 +458,23 @@ export const adminListCoupons = createServerFn({ method: "GET" }).handler(
 export const adminSaveCoupon = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => d)
   .handler(async ({ data }): Promise<{ ok: true; id: number } | Fail> => {
-    if (!isAdminRequest()) return unauthorized;
+    const admin = await adminFor("products");
+    if (!admin.ok) return admin;
     try {
-      return await coupons.saveCoupon(data as CouponInput);
+      const input = data as CouponInput;
+      const res = await coupons.saveCoupon(input);
+      if (res.ok)
+        await admin.log(
+          input.id ? "coupon.updated" : "coupon.created",
+          String(input.code).toUpperCase(),
+          {
+            type: input.type,
+            value: input.value,
+            active: input.active,
+            maxUses: input.maxUses,
+          },
+        );
+      return res;
     } catch (error) {
       console.error("[admin] save coupon failed", error);
       return { ok: false, error: "Could not save the coupon." };
@@ -436,9 +484,11 @@ export const adminSaveCoupon = createServerFn({ method: "POST" })
 export const adminDeleteCoupon = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({ id: z.number().int().positive() }).parse(d))
   .handler(async ({ data }): Promise<{ ok: true } | Fail> => {
-    if (!isAdminRequest()) return unauthorized;
+    const admin = await adminFor("products");
+    if (!admin.ok) return admin;
     try {
       await coupons.deleteCoupon(data.id);
+      await admin.log("coupon.deleted", `#${data.id}`);
       return { ok: true };
     } catch (error) {
       console.error("[admin] delete coupon failed", error);

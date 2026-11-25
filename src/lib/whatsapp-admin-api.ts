@@ -5,7 +5,8 @@ import { z } from "zod";
 
 import { toWhatsAppDigits } from "@/lib/notifications";
 import { CONFIRM_TEMPLATE_TEXT } from "@/lib/whatsapp-templates";
-import { isAdminRequest } from "@/server/admin-session";
+import { adminFor } from "@/server/admin-session";
+import { securityAlert } from "@/server/audit";
 import { rateLimit } from "@/server/auth";
 import { getSettings } from "@/server/bookings";
 import {
@@ -31,7 +32,8 @@ async function view(): Promise<WhatsAppSettingsView> {
 
 export const adminGetWhatsAppSettings = createServerFn({ method: "GET" }).handler(
   async (): Promise<{ ok: true; settings: WhatsAppSettingsView } | Fail> => {
-    if (!isAdminRequest()) return unauthorized;
+    const admin = await adminFor("settings");
+    if (!admin.ok) return admin;
     try {
       return { ok: true, settings: await view() };
     } catch (error) {
@@ -66,7 +68,8 @@ export const adminSaveWhatsAppSettings = createServerFn({ method: "POST" })
       .parse(d),
   )
   .handler(async ({ data }): Promise<{ ok: true; settings: WhatsAppSettingsView } | Fail> => {
-    if (!isAdminRequest()) return unauthorized;
+    const admin = await adminFor("settings");
+    if (!admin.ok) return admin;
     try {
       const { token, ...config } = data;
       if (token) {
@@ -81,6 +84,14 @@ export const adminSaveWhatsAppSettings = createServerFn({ method: "POST" })
         };
       }
       await saveWhatsAppConfig(config);
+      await admin.log("settings.whatsapp", undefined, {
+        enabled: config.enabled,
+        tokenChanged: Boolean(token) || undefined,
+      });
+      if (token)
+        void securityAlert("WhatsApp token changed", [
+          `${admin.user.email} replaced the WhatsApp access token.`,
+        ]);
       return { ok: true, settings: await view() };
     } catch (error) {
       console.error("[admin] save whatsapp settings failed", error);
@@ -93,7 +104,8 @@ export const adminSendWhatsAppTest = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({ phone: z.string().trim().max(30) }).parse(d))
   .handler(
     async ({ data }): Promise<{ ok: true; status: string; error?: string | undefined } | Fail> => {
-      if (!isAdminRequest()) return unauthorized;
+      const admin = await adminFor("settings");
+      if (!admin.ok) return admin;
       if (
         !rateLimit(`wa-test:${getRequestIP({ xForwardedFor: true }) ?? "unknown"}`, 10, 15 * 60_000)
       )

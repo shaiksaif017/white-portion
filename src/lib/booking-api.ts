@@ -1,7 +1,7 @@
 // Server functions for booking and admin. The handler bodies run only on the server;
 // the browser just gets a small RPC stub for each one.
 import { createServerFn } from "@tanstack/react-start";
-import { deleteCookie, getCookie, getRequestIP, setCookie } from "@tanstack/react-start/server";
+import { getRequestIP } from "@tanstack/react-start/server";
 import { z } from "zod";
 
 import { type SlotAvailability } from "@/lib/booking-logic";
@@ -21,18 +21,11 @@ import {
   buildConfirmation,
   buildCustomerAcknowledgement,
 } from "@/lib/notifications";
-import {
-  SESSION_COOKIE,
-  SESSION_HOURS,
-  createSessionToken,
-  rateLimit,
-  resetRateLimit,
-  verifyPassword,
-  verifySessionToken,
-} from "@/server/auth";
+import { rateLimit } from "@/server/auth";
 import * as bookings from "@/server/bookings";
 import { isDbConfigured } from "@/server/db";
-import { authConfig, isProduction } from "@/server/env";
+import { adminFor } from "@/server/admin-session";
+import { securityAlert } from "@/server/audit";
 import { resolveSmtp, saveSmtpPassword, sendEmail, sendEmails, smtpSummary } from "@/server/mailer";
 import { toWhatsAppDigits } from "@/lib/notifications";
 import {
@@ -49,12 +42,7 @@ function clientIp(): string {
   return getRequestIP({ xForwardedFor: true }) ?? "unknown";
 }
 
-function isAdmin(): boolean {
-  return verifySessionToken(getCookie(SESSION_COOKIE));
-}
-
 type Fail = { ok: false; error: string };
-const unauthorized: Fail = { ok: false, error: "Your session has expired. Please log in again." };
 
 // ---------- public ----------
 
@@ -119,51 +107,7 @@ export const submitBooking = createServerFn({ method: "POST" })
     }
   });
 
-// ---------- admin auth ----------
-
-export const getAdminSession = createServerFn({ method: "GET" }).handler(async () => ({
-  authenticated: isAdmin(),
-  configured: authConfig() !== null && isDbConfigured(),
-}));
-
-export const adminLogin = createServerFn({ method: "POST" })
-  .inputValidator((d: unknown) => z.object({ password: z.string().min(1).max(200) }).parse(d))
-  .handler(async ({ data }): Promise<{ ok: true } | Fail> => {
-    const config = authConfig();
-    if (!config) {
-      return {
-        ok: false,
-        error:
-          "Admin login is not set up on the server yet (ADMIN_PASSWORD_HASH / SESSION_SECRET).",
-      };
-    }
-    const key = `login:${clientIp()}`;
-    if (!rateLimit(key, 5, 15 * 60_000)) {
-      return {
-        ok: false,
-        error: "Too many failed attempts. Please wait 15 minutes and try again.",
-      };
-    }
-    if (!verifyPassword(data.password, config.passwordHash)) {
-      return { ok: false, error: "Incorrect password." };
-    }
-    resetRateLimit(key);
-    const token = createSessionToken();
-    if (!token) return { ok: false, error: "Admin login is not set up on the server yet." };
-    setCookie(SESSION_COOKIE, token, {
-      httpOnly: true,
-      secure: isProduction(),
-      sameSite: "strict",
-      path: "/",
-      maxAge: SESSION_HOURS * 3600,
-    });
-    return { ok: true };
-  });
-
-export const adminLogout = createServerFn({ method: "POST" }).handler(async () => {
-  deleteCookie(SESSION_COOKIE, { path: "/" });
-  return { ok: true as const };
-});
+// Admin login, 2FA and sessions live in src/lib/admin-auth-api.ts.
 
 // ---------- admin data ----------
 
@@ -177,7 +121,8 @@ export const getAdminDashboard = createServerFn({ method: "GET" }).handler(
       }
     | Fail
   > => {
-    if (!isAdmin()) return unauthorized;
+    const admin = await adminFor("bookings");
+    if (!admin.ok) return admin;
     try {
       const [appointments, settings, notifications] = await Promise.all([
         bookings.listAppointments(),
@@ -207,36 +152,50 @@ export const adminUpdateStatus = createServerFn({ method: "POST" })
     }): Promise<
       { ok: true; appointment: AppointmentRecord; notified: StatusNotifications | null } | Fail
     > => {
-    if (!isAdmin()) return unauthorized;
-    try {
-      const result = await bookings.updateAppointmentStatus(data.id, data.status);
-      if (!result.ok) return result;
-      const { appointment, previousStatus } = result;
-      let notified: StatusNotifications | null = null;
-      const status = appointment.booking_status;
-      if (previousStatus !== status && (status === "Confirmed" || status === "Cancelled")) {
-        // Email and WhatsApp go out together; the admin sees how each one went.
-        const settings = await bookings.getSettings();
-        const confirm = status === "Confirmed";
-        const to = toWhatsAppDigits(appointment.whatsapp_number) ?? toWhatsAppDigits(appointment.phone);
-        const [email, whatsapp] = await Promise.all([
-          sendEmail(confirm ? buildConfirmation(appointment, settings) : buildCancellation(appointment, settings)),
-          sendAppointmentWhatsApp({
-            type: confirm ? "WHATSAPP_CONFIRMATION" : "WHATSAPP_CANCELLATION",
-            to,
-            which: confirm ? "confirm" : "cancel",
-            params: confirm ? confirmParams(appointment, settings) : cancelParams(appointment),
-            templateText: confirm ? CONFIRM_TEMPLATE_TEXT : CANCEL_TEMPLATE_TEXT,
-          }),
-        ]);
-        notified = { email, whatsapp };
+      const admin = await adminFor("bookings");
+      if (!admin.ok) return admin;
+      try {
+        const result = await bookings.updateAppointmentStatus(data.id, data.status);
+        if (!result.ok) return result;
+        const { appointment, previousStatus } = result;
+        let notified: StatusNotifications | null = null;
+        const status = appointment.booking_status;
+        if (previousStatus !== status && (status === "Confirmed" || status === "Cancelled")) {
+          // Email and WhatsApp go out together; the admin sees how each one went.
+          const settings = await bookings.getSettings();
+          const confirm = status === "Confirmed";
+          const to =
+            toWhatsAppDigits(appointment.whatsapp_number) ?? toWhatsAppDigits(appointment.phone);
+          const [email, whatsapp] = await Promise.all([
+            sendEmail(
+              confirm
+                ? buildConfirmation(appointment, settings)
+                : buildCancellation(appointment, settings),
+            ),
+            sendAppointmentWhatsApp({
+              type: confirm ? "WHATSAPP_CONFIRMATION" : "WHATSAPP_CANCELLATION",
+              to,
+              which: confirm ? "confirm" : "cancel",
+              params: confirm ? confirmParams(appointment, settings) : cancelParams(appointment),
+              templateText: confirm ? CONFIRM_TEMPLATE_TEXT : CANCEL_TEMPLATE_TEXT,
+            }),
+          ]);
+          notified = { email, whatsapp };
+        }
+        if (previousStatus !== appointment.booking_status) {
+          await admin.log("booking.status", appointment.booking_reference, {
+            from: previousStatus,
+            to: appointment.booking_status,
+            email: notified?.email.status,
+            whatsapp: notified?.whatsapp.status,
+          });
+        }
+        return { ok: true, appointment, notified };
+      } catch (error) {
+        console.error("[admin] status update failed", error);
+        return { ok: false, error: "Could not update the booking." };
       }
-      return { ok: true, appointment, notified };
-    } catch (error) {
-      console.error("[admin] status update failed", error);
-      return { ok: false, error: "Could not update the booking." };
-    }
-  },
+    },
   );
 
 export interface StatusNotifications {
@@ -247,12 +206,15 @@ export interface StatusNotifications {
 export const adminSaveSettings = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => d)
   .handler(async ({ data }): Promise<{ ok: true; settings: BookingSettings } | Fail> => {
-    if (!isAdmin()) return unauthorized;
+    const admin = await adminFor("booking_settings");
+    if (!admin.ok) return admin;
     const parsed = BookingSettingsSchema.safeParse(data);
     if (!parsed.success)
       return { ok: false, error: parsed.error.issues[0]?.message ?? "Invalid settings." };
     try {
-      return { ok: true, settings: await bookings.saveSettings(parsed.data) };
+      const saved = await bookings.saveSettings(parsed.data);
+      await admin.log("settings.booking_hours");
+      return { ok: true, settings: saved };
     } catch (error) {
       console.error("[admin] save settings failed", error);
       return { ok: false, error: "Could not save settings." };
@@ -267,7 +229,8 @@ const slotInput = z.object({
 export const adminSetSlotBlocked = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => slotInput.extend({ blocked: z.boolean() }).parse(d))
   .handler(async ({ data }): Promise<{ ok: true; settings: BookingSettings } | Fail> => {
-    if (!isAdmin()) return unauthorized;
+    const admin = await adminFor("booking_settings");
+    if (!admin.ok) return admin;
     try {
       const settings = await bookings.getSettings();
       const others = settings.blockedSlots.filter(
@@ -276,7 +239,12 @@ export const adminSetSlotBlocked = createServerFn({ method: "POST" })
       settings.blockedSlots = data.blocked
         ? [...others, { date: data.date, time: data.time }]
         : others;
-      return { ok: true, settings: await bookings.saveSettings(settings) };
+      const saved = await bookings.saveSettings(settings);
+      await admin.log(
+        data.blocked ? "booking.slot_blocked" : "booking.slot_unblocked",
+        `${data.date} ${data.time}`,
+      );
+      return { ok: true, settings: saved };
     } catch (error) {
       console.error("[admin] block slot failed", error);
       return { ok: false, error: "Could not update blocked slots." };
@@ -313,7 +281,8 @@ async function runTestEmail(): Promise<TestEmailResult> {
 
 export const adminSendTestEmail = createServerFn({ method: "POST" }).handler(
   async (): Promise<TestEmailResult> => {
-    if (!isAdmin()) return unauthorized;
+    const admin = await adminFor("settings");
+    if (!admin.ok) return admin;
     try {
       return await runTestEmail();
     } catch (error) {
@@ -328,12 +297,17 @@ export const adminSendTestEmail = createServerFn({ method: "POST" }).handler(
 export const adminSetEmailPassword = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => z.object({ password: z.string().min(1).max(200) }).parse(d))
   .handler(async ({ data }): Promise<TestEmailResult> => {
-    if (!isAdmin()) return unauthorized;
+    const admin = await adminFor("settings");
+    if (!admin.ok) return admin;
     if (!rateLimit(`smtp-pass:${clientIp()}`, 10, 15 * 60_000)) {
       return { ok: false, error: "Too many attempts. Please wait 15 minutes." };
     }
     try {
       await saveSmtpPassword(data.password);
+      await admin.log("settings.email_password_changed");
+      void securityAlert("Email password changed", [
+        `${admin.user.email} changed the email account password in admin.`,
+      ]);
       return await runTestEmail();
     } catch (error) {
       console.error("[admin] save email password failed", error);
@@ -343,7 +317,8 @@ export const adminSetEmailPassword = createServerFn({ method: "POST" })
 
 export const adminExportCsv = createServerFn({ method: "GET" }).handler(
   async (): Promise<{ ok: true; csv: string } | Fail> => {
-    if (!isAdmin()) return unauthorized;
+    const admin = await adminFor("bookings");
+    if (!admin.ok) return admin;
     try {
       return {
         ok: true,

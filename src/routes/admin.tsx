@@ -1,7 +1,6 @@
 import { useState, useMemo, useEffect } from "react";
 import { createFileRoute, Link } from "@tanstack/react-router";
 import {
-  Lock,
   LogOut,
   Calendar,
   Clock,
@@ -15,7 +14,6 @@ import {
   Filter,
   Search,
   Settings,
-  Shield,
   Eye,
   X,
   FileText,
@@ -33,14 +31,17 @@ import {
   adminExportCsv,
   adminSendTestEmail,
   adminSetEmailPassword,
-  adminLogin,
-  adminLogout,
   adminSaveSettings,
   adminSetSlotBlocked,
   adminUpdateStatus,
   getAdminDashboard,
-  getAdminSession,
 } from "@/lib/booking-api";
+import { adminSignOut, getAdminSession } from "@/lib/admin-auth-api";
+import { type AdminSessionView, type Permission, ROLE_LABEL } from "@/lib/admin-types";
+import { AdminSignIn } from "@/components/admin-sign-in";
+import { AdminDashboard } from "@/components/admin-dashboard";
+import { AdminTeam } from "@/components/admin-team";
+import { AdminSecurity } from "@/components/admin-security";
 import {
   type AppointmentRecord,
   type BookingStatus,
@@ -66,12 +67,12 @@ export const Route = createFileRoute("/admin")({
 });
 
 function AdminPage() {
-  const [isAuthenticated, setIsAuthenticated] = useState<boolean>(false);
-  const [sessionChecked, setSessionChecked] = useState(false);
-  const [serverConfigured, setServerConfigured] = useState(true);
-  const [passcode, setPasscode] = useState("");
-  const [authError, setAuthError] = useState("");
-  const [isLoggingIn, setIsLoggingIn] = useState(false);
+  const [session, setSession] = useState<AdminSessionView | null>(null);
+  const isAuthenticated = session?.state === "ok";
+  const perms = session?.user?.permissions ?? [];
+  const allowed = (perm: Permission) => perms.includes(perm);
+  const signedOut = () =>
+    setSession((s) => ({ configured: s?.configured ?? true, state: "none", user: null }));
   const [actionError, setActionError] = useState<string | null>(null);
   // How the automatic email + WhatsApp went after the last Confirm / Cancel.
   const [notifyResult, setNotifyResult] = useState<{
@@ -83,7 +84,9 @@ function AdminPage() {
   const [settings, setSettings] = useState<BookingSettings>(defaultBookingSettings);
   const [notifications, setNotifications] = useState<NotificationLog[]>([]);
 
-  const [activeTab, setActiveTab] = useState<"bookings" | "settings" | "notifications" | "products" | "orders">("bookings");
+  const [activeTab, setActiveTab] = useState<
+    "dashboard" | "bookings" | "settings" | "notifications" | "products" | "orders" | "team" | "security"
+  >("bookings");
   const [statusFilter, setStatusFilter] = useState<string>("ALL");
   const [searchQuery, setSearchQuery] = useState("");
   const [selectedRecord, setSelectedRecord] = useState<AppointmentRecord | null>(null);
@@ -92,25 +95,28 @@ function AdminPage() {
   const [blockDateInput, setBlockDateInput] = useState("");
   const [blockTimeInput, setBlockTimeInput] = useState("10:00");
 
+  async function refreshSession() {
+    try {
+      const next = await getAdminSession();
+      setSession(next);
+      if (next.state === "ok" && next.user) {
+        setActiveTab(next.user.permissions.includes("dashboard") ? "dashboard" : "bookings");
+        await refreshData();
+      }
+    } catch {
+      setSession({ configured: true, state: "none", user: null });
+    }
+  }
+
   useEffect(() => {
-    getAdminSession()
-      .then((s) => {
-        setServerConfigured(s.configured);
-        if (s.authenticated) {
-          setIsAuthenticated(true);
-          void refreshData();
-        }
-      })
-      .catch(() => setAuthError("Could not reach the server."))
-      .finally(() => setSessionChecked(true));
+    void refreshSession();
     // eslint-disable-next-line react-hooks/exhaustive-deps -- check the session once on page load
   }, []);
 
   // Any "session expired" answer from the server drops back to the login screen.
   function handleFailure(error: string) {
     if (/session has expired/i.test(error)) {
-      setIsAuthenticated(false);
-      setAuthError(error);
+      signedOut();
     } else {
       setActionError(error);
     }
@@ -129,31 +135,11 @@ function AdminPage() {
     }
   }
 
-  async function handleLogin(e: React.FormEvent) {
-    e.preventDefault();
-    setIsLoggingIn(true);
-    try {
-      const res = await adminLogin({ data: { password: passcode } });
-      if (res.ok) {
-        setIsAuthenticated(true);
-        setAuthError("");
-        setPasscode("");
-        await refreshData();
-      } else {
-        setAuthError(res.error);
-      }
-    } catch {
-      setAuthError("Could not reach the server.");
-    } finally {
-      setIsLoggingIn(false);
-    }
-  }
-
   async function handleLogout() {
     try {
-      await adminLogout();
+      await adminSignOut();
     } finally {
-      setIsAuthenticated(false);
+      signedOut();
       setAppointments([]);
       setNotifications([]);
       setSelectedRecord(null);
@@ -299,64 +285,8 @@ function AdminPage() {
     };
   }, [appointments]);
 
-  if (!isAuthenticated) {
-    return (
-      <main className="min-h-screen bg-charcoal text-paper flex flex-col justify-between">
-        <SiteHeader isSolid />
-        <div className="flex-1 flex items-center justify-center p-6">
-          <div className="w-full max-w-md bg-paper/5 border border-rule-light p-8 md:p-10 rounded shadow-2xl backdrop-blur-sm">
-            <div className="text-center space-y-2 mb-8">
-              <div className="w-12 h-12 bg-primary/20 text-gold-accent rounded-full flex items-center justify-center mx-auto mb-3 border border-gold-accent/30">
-                <Shield className="w-6 h-6" />
-              </div>
-              <h1 className="text-2xl font-display font-medium text-paper">
-                Administration Portal
-              </h1>
-              <p className="text-xs text-paper-soft">
-                Protected area for {brand.name} coaching directors.
-              </p>
-            </div>
-
-            <form onSubmit={handleLogin} className="space-y-4">
-              <div>
-                <label className="block text-xs font-bold uppercase tracking-wider text-paper-soft mb-2">
-                  Security Passcode
-                </label>
-                <div className="relative">
-                  <input
-                    type="password"
-                    value={passcode}
-                    onChange={(e) => setPasscode(e.target.value)}
-                    placeholder="Enter admin passcode"
-                    required
-                    className="w-full p-3 rounded bg-charcoal border border-rule-light text-xs text-paper placeholder:text-paper-faint focus:border-gold-accent focus:outline-none"
-                  />
-                  <Lock className="w-4 h-4 text-paper-faint absolute right-3 top-3.5" />
-                </div>
-              </div>
-
-              {authError && (
-                <div className="p-3 rounded bg-destructive/20 border border-destructive/40 text-destructive-foreground text-xs">
-                  {authError}
-                </div>
-              )}
-
-              <Button type="submit" variant="hero" className="w-full !mt-6" disabled={isLoggingIn}>
-                {isLoggingIn ? "CHECKING…" : "AUTHENTICATE ACCESS"}
-              </Button>
-
-              {sessionChecked && !serverConfigured && (
-                <p className="text-[11px] text-paper-faint text-center pt-2">
-                  Admin login is not configured on the server yet.
-                </p>
-              )}
-            </form>
-          </div>
-        </div>
-        <SiteFooter />
-      </main>
-    );
-  }
+  if (!session) return <main className="min-h-screen bg-charcoal" aria-busy="true" />;
+  if (!isAuthenticated) return <AdminSignIn session={session} onChanged={refreshSession} />;
 
   return (
     <main className="min-h-screen bg-background text-foreground">
@@ -375,6 +305,11 @@ function AdminPage() {
             <h1 className="text-3xl font-display font-medium text-paper mt-1">
               Appointment Management
             </h1>
+            {session.user && (
+              <p className="text-xs text-paper-soft mt-1">
+                Signed in as {session.user.name || session.user.email} · {ROLE_LABEL[session.user.role]}
+              </p>
+            )}
           </div>
 
           <div className="flex items-center gap-3">
@@ -440,6 +375,19 @@ function AdminPage() {
       {/* Navigation Tabs */}
       <div className="max-w-7xl mx-auto px-6 md:px-12 mt-8">
         <div className="flex border-b border-border space-x-8 text-xs font-bold uppercase tracking-wider overflow-x-auto whitespace-nowrap">
+          {allowed("dashboard") && (
+            <button
+              type="button"
+              onClick={() => setActiveTab("dashboard")}
+              className={`pb-3 cursor-pointer transition-colors ${
+                activeTab === "dashboard"
+                  ? "border-b-2 border-primary text-primary"
+                  : "text-muted-foreground hover:text-charcoal"
+              }`}
+            >
+              Dashboard
+            </button>
+          )}
           <button
             type="button"
             onClick={() => setActiveTab("bookings")}
@@ -451,6 +399,7 @@ function AdminPage() {
           >
             All Bookings ({appointments.length})
           </button>
+          {allowed("booking_settings") && (
           <button
             type="button"
             onClick={() => setActiveTab("settings")}
@@ -462,6 +411,8 @@ function AdminPage() {
           >
             <Settings className="w-3.5 h-3.5" /> Working Hours & Slot Blocking
           </button>
+          )}
+          {allowed("settings") && (
           <button
             type="button"
             onClick={() => setActiveTab("notifications")}
@@ -473,6 +424,8 @@ function AdminPage() {
           >
             <Mail className="w-3.5 h-3.5" /> Email Notification Log ({notifications.length})
           </button>
+          )}
+          {allowed("products") && (
           <button
             type="button"
             onClick={() => setActiveTab("products")}
@@ -484,6 +437,8 @@ function AdminPage() {
           >
             <Package className="w-3.5 h-3.5" /> Products
           </button>
+          )}
+          {allowed("orders") && (
           <button
             type="button"
             onClick={() => setActiveTab("orders")}
@@ -495,6 +450,33 @@ function AdminPage() {
           >
             <ShoppingBag className="w-3.5 h-3.5" /> Orders
           </button>
+          )}
+          {allowed("users") && (
+            <button
+              type="button"
+              onClick={() => setActiveTab("team")}
+              className={`pb-3 cursor-pointer transition-colors ${
+                activeTab === "team"
+                  ? "border-b-2 border-primary text-primary"
+                  : "text-muted-foreground hover:text-charcoal"
+              }`}
+            >
+              Team
+            </button>
+          )}
+          {(
+            <button
+              type="button"
+              onClick={() => setActiveTab("security")}
+              className={`pb-3 cursor-pointer transition-colors ${
+                activeTab === "security"
+                  ? "border-b-2 border-primary text-primary"
+                  : "text-muted-foreground hover:text-charcoal"
+              }`}
+            >
+              Security
+            </button>
+          )}
         </div>
       </div>
 
@@ -515,6 +497,32 @@ function AdminPage() {
             }
             onClose={() => setNotifyResult(null)}
           />
+        )}
+
+        {activeTab === "dashboard" && allowed("dashboard") && (
+          <div className="bg-card border border-border p-6 md:p-8 rounded shadow-sm">
+            <AdminDashboard
+              onSessionExpired={handleFailure}
+              goTo={(tab) => setActiveTab(tab)}
+            />
+          </div>
+        )}
+
+        {activeTab === "team" && allowed("users") && session.user && (
+          <div className="bg-card border border-border p-6 md:p-8 rounded shadow-sm">
+            <AdminTeam me={session.user.email} fail={handleFailure} />
+          </div>
+        )}
+
+        {activeTab === "security" && session.user && (
+          <div className="bg-card border border-border p-6 md:p-8 rounded shadow-sm">
+            <AdminSecurity
+              canAudit={allowed("audit")}
+              recoveryCodesLeft={session.user.recoveryCodesLeft}
+              fail={handleFailure}
+              onSignedOut={signedOut}
+            />
+          </div>
         )}
 
         {activeTab === "bookings" && (
@@ -894,7 +902,11 @@ function AdminPage() {
 
         {activeTab === "orders" && (
           <div className="bg-card border border-border p-6 md:p-8 rounded shadow-sm">
-            <AdminOrders onSessionExpired={handleFailure} />
+            <AdminOrders
+              onSessionExpired={handleFailure}
+              canSettings={allowed("settings")}
+              canRefund={allowed("refunds")}
+            />
           </div>
         )}
 

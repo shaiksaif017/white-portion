@@ -254,6 +254,55 @@ const SCHEMA: string[] = [
     UNIQUE KEY uniq_enrolment (email, product_id),
     KEY idx_enrolment_product (product_id)
   ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+  // ---------- admin users, 2FA and audit ----------
+  `CREATE TABLE IF NOT EXISTS admin_users (
+    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    email VARCHAR(254) NOT NULL,
+    name VARCHAR(120) NOT NULL DEFAULT '',
+    role VARCHAR(10) NOT NULL,
+    password_hash VARCHAR(200) NOT NULL,
+    totp_secret TEXT NULL,
+    totp_pending TEXT NULL,
+    totp_last_step BIGINT NOT NULL DEFAULT 0,
+    active TINYINT NOT NULL DEFAULT 1,
+    session_version INT NOT NULL DEFAULT 1,
+    failed_attempts INT NOT NULL DEFAULT 0,
+    locked_until DATETIME NULL,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    last_login_at DATETIME NULL,
+    UNIQUE KEY uniq_admin_email (email)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+  `CREATE TABLE IF NOT EXISTS admin_tokens (
+    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    purpose VARCHAR(10) NOT NULL,
+    token_hash CHAR(64) NOT NULL,
+    expires_at DATETIME NOT NULL,
+    used TINYINT NOT NULL DEFAULT 0,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    UNIQUE KEY uniq_admin_token (token_hash)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+  `CREATE TABLE IF NOT EXISTS admin_recovery_codes (
+    id INT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    user_id INT NOT NULL,
+    code_hash CHAR(64) NOT NULL,
+    used TINYINT NOT NULL DEFAULT 0,
+    KEY idx_recovery_user (user_id)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
+  // Who did what, when. Never stores passwords, codes, keys or card data.
+  `CREATE TABLE IF NOT EXISTS audit_log (
+    id BIGINT NOT NULL AUTO_INCREMENT PRIMARY KEY,
+    created_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+    actor_id INT NULL,
+    actor_email VARCHAR(254) NOT NULL DEFAULT '',
+    action VARCHAR(60) NOT NULL,
+    target VARCHAR(200) NOT NULL DEFAULT '',
+    details TEXT NULL,
+    ip VARCHAR(64) NOT NULL DEFAULT '',
+    severity VARCHAR(8) NOT NULL DEFAULT 'info',
+    KEY idx_audit_time (created_at),
+    KEY idx_audit_action (action)
+  ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci`,
   `CREATE TABLE IF NOT EXISTS lesson_progress (
     email VARCHAR(254) NOT NULL,
     lesson_id INT NOT NULL,

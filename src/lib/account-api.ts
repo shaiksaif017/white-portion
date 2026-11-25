@@ -16,7 +16,8 @@ import {
   EmailSchema,
   LoginCodeSchema,
 } from "@/lib/course-types";
-import { isAdminRequest } from "@/server/admin-session";
+import { adminFor } from "@/server/admin-session";
+import { audit } from "@/server/audit";
 import { rateLimit } from "@/server/auth";
 import * as courses from "@/server/courses";
 import * as customers from "@/server/customers";
@@ -124,6 +125,7 @@ export const logoutAllDevices = createServerFn({ method: "POST" }).handler(
     const me = await currentCustomer();
     if (!me) return { ok: false, error: "Please log in again." };
     await customers.logoutEverywhere(me.id);
+    void audit({ id: null, email: me.email }, "customer.signed_out_everywhere", me.email);
     deleteCookie(customers.CUSTOMER_COOKIE, { path: "/" });
     return { ok: true };
   },
@@ -181,6 +183,10 @@ export const updateAccountProfile = createServerFn({ method: "POST" })
     const me = await currentCustomer();
     if (!me) return { ok: false, error: "Please log in again." };
     await customers.updateProfile(me.id, data.name, data.phone);
+    void audit({ id: null, email: me.email }, "customer.profile_updated", me.email, {
+      nameChanged: me.name !== data.name || undefined,
+      phoneChanged: me.phone !== data.phone || undefined,
+    });
     return { ok: true };
   });
 
@@ -301,7 +307,8 @@ export const markLesson = createServerFn({ method: "POST" })
 export const adminGetCourseContent = createServerFn({ method: "GET" })
   .inputValidator((d: unknown) => z.object({ productId: z.number().int().positive() }).parse(d))
   .handler(async ({ data }): Promise<{ ok: true; content: AdminCourseContent } | Fail> => {
-    if (!isAdminRequest()) return unauthorized;
+    const admin = await adminFor("products");
+    if (!admin.ok) return admin;
     try {
       const content = await courses.getAdminCourseContent(data.productId);
       return content ? { ok: true, content } : { ok: false, error: "Course not found." };
@@ -314,9 +321,17 @@ export const adminGetCourseContent = createServerFn({ method: "GET" })
 export const adminSaveCourseContent = createServerFn({ method: "POST" })
   .inputValidator((d: unknown) => d)
   .handler(async ({ data }): Promise<{ ok: true } | Fail> => {
-    if (!isAdminRequest()) return unauthorized;
+    const admin = await adminFor("products");
+    if (!admin.ok) return admin;
     try {
-      return await courses.saveCourseContent(data as CourseContentInput);
+      const input = data as CourseContentInput;
+      const res = await courses.saveCourseContent(input);
+      if (res.ok)
+        await admin.log("course.content_saved", `product #${input.productId}`, {
+          modules: input.modules.length,
+          lessons: input.modules.reduce((n, m) => n + m.lessons.length, 0),
+        });
+      return res;
     } catch (error) {
       console.error("[admin] save course failed", error);
       return { ok: false, error: "Could not save the course." };
@@ -325,7 +340,8 @@ export const adminSaveCourseContent = createServerFn({ method: "POST" })
 
 export const adminListEnrolments = createServerFn({ method: "GET" }).handler(
   async (): Promise<{ ok: true; enrolments: AdminEnrolment[] } | Fail> => {
-    if (!isAdminRequest()) return unauthorized;
+    const admin = await adminFor("products");
+    if (!admin.ok) return admin;
     try {
       return { ok: true, enrolments: await courses.listEnrolments() };
     } catch (error) {
@@ -340,9 +356,12 @@ export const adminGrantEnrolment = createServerFn({ method: "POST" })
     z.object({ email: EmailSchema, productId: z.number().int().positive() }).parse(d),
   )
   .handler(async ({ data }): Promise<{ ok: true } | Fail> => {
-    if (!isAdminRequest()) return unauthorized;
+    const admin = await adminFor("products");
+    if (!admin.ok) return admin;
     try {
-      return await courses.grantEnrolment(data.email, data.productId);
+      const res = await courses.grantEnrolment(data.email, data.productId);
+      if (res.ok) await admin.log("enrolment.granted", data.email, { productId: data.productId });
+      return res;
     } catch (error) {
       console.error("[admin] grant enrolment failed", error);
       return { ok: false, error: "Could not add the student." };
@@ -354,9 +373,14 @@ export const adminSetEnrolmentStatus = createServerFn({ method: "POST" })
     z.object({ id: z.number().int().positive(), status: z.enum(["active", "revoked"]) }).parse(d),
   )
   .handler(async ({ data }): Promise<{ ok: true } | Fail> => {
-    if (!isAdminRequest()) return unauthorized;
+    const admin = await adminFor("products");
+    if (!admin.ok) return admin;
     try {
       await courses.setEnrolmentStatus(data.id, data.status);
+      await admin.log(
+        data.status === "active" ? "enrolment.restored" : "enrolment.revoked",
+        `#${data.id}`,
+      );
       return { ok: true };
     } catch (error) {
       console.error("[admin] enrolment status failed", error);

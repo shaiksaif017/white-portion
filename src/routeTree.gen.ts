@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as AdminRouteImport } from './routes/admin'
+import { Route as AdminResetRouteImport } from './routes/admin-reset'
 import { Route as ApproachRouteImport } from './routes/approach'
 import { Route as BlogRouteImport } from './routes/blog'
 import { Route as BodybuildingPrepRouteImport } from './routes/bodybuilding-prep'
@@ -53,6 +54,11 @@ const AboutRoute = AboutRouteImport.update({
 const AdminRoute = AdminRouteImport.update({
   id: '/admin',
   path: '/admin',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AdminResetRoute = AdminResetRouteImport.update({
+  id: '/admin-reset',
+  path: '/admin-reset',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ApproachRoute = ApproachRouteImport.update({
@@ -195,6 +201,7 @@ export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/admin': typeof AdminRoute
+  '/admin-reset': typeof AdminResetRoute
   '/approach': typeof ApproachRoute
   '/blog': typeof BlogRoute
   '/bodybuilding-prep': typeof BodybuildingPrepRoute
@@ -227,6 +234,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/admin': typeof AdminRoute
+  '/admin-reset': typeof AdminResetRoute
   '/approach': typeof ApproachRoute
   '/blog': typeof BlogRoute
   '/bodybuilding-prep': typeof BodybuildingPrepRoute
@@ -260,6 +268,7 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
   '/admin': typeof AdminRoute
+  '/admin-reset': typeof AdminResetRoute
   '/approach': typeof ApproachRoute
   '/blog': typeof BlogRoute
   '/bodybuilding-prep': typeof BodybuildingPrepRoute
@@ -294,6 +303,7 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/admin'
+    | '/admin-reset'
     | '/approach'
     | '/blog'
     | '/bodybuilding-prep'
@@ -326,6 +336,7 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/admin'
+    | '/admin-reset'
     | '/approach'
     | '/blog'
     | '/bodybuilding-prep'
@@ -358,6 +369,7 @@ export interface FileRouteTypes {
     | '/'
     | '/about'
     | '/admin'
+    | '/admin-reset'
     | '/approach'
     | '/blog'
     | '/bodybuilding-prep'
@@ -391,6 +403,7 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
   AdminRoute: typeof AdminRoute
+  AdminResetRoute: typeof AdminResetRoute
   ApproachRoute: typeof ApproachRoute
   BlogRoute: typeof BlogRoute
   BodybuildingPrepRoute: typeof BodybuildingPrepRoute
@@ -441,6 +454,13 @@ declare module '@tanstack/react-router' {
       path: '/admin'
       fullPath: '/admin'
       preLoaderRoute: typeof AdminRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/admin-reset': {
+      id: '/admin-reset'
+      path: '/admin-reset'
+      fullPath: '/admin-reset'
+      preLoaderRoute: typeof AdminResetRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/approach': {
@@ -639,6 +659,7 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
   AdminRoute: AdminRoute,
+  AdminResetRoute: AdminResetRoute,
   ApproachRoute: ApproachRoute,
   BlogRoute: BlogRoute,
   BodybuildingPrepRoute: BodybuildingPrepRoute,
